@@ -455,6 +455,9 @@ def test_backup_rejects_invalid_max_delete(tmp_path: Path, monkeypatch):
     assert cli.main(
         ["backup", "-s", str(source), "-d", "remote:photos", "--max-delete", "-2"]
     ) == 2
+    assert cli.main(
+        ["backup", "-s", str(source), "-d", "remote:photos", "--max-delete", "101"]
+    ) == 2
     assert calls == []
 
 

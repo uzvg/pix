@@ -139,7 +139,7 @@ pyvips/libvips 不可用。
 - 需要 `rclone >= 1.66`。`backup` / `publish` 启动时解析 `rclone version` 并检查；`doctor` 保留同样的检查。
 - 首次运行 `pix backup` / `pix publish` 必须加 `--resync`，否则 rclone 会因缺少基线报错。
 - 修改 `--exclude` 或配置排除项后，必须重新带 `--resync` 运行，否则被排除的文件可能被当作删除传播。
-- `--max-delete` 默认 `10`，按删除数量计（不是百分比）；`0` 禁止删除，`-1` 不限制。超过限制时 rclone 拒绝执行，这是默认保护，不要静默改成 `-1`。
+- `--max-delete` 默认 `10`，是 rclone bisync 的删除百分比（不是数量）；`0` 禁止删除，`-1` 不限制。超过比例时 rclone 拒绝执行，这是默认保护，不要静默改成 `-1`。
 - `backup` / `publish` 是双向镜像，不是单向备份，删除会双向传播。手动验证时先用 `--dry-run`，再在临时目录里测试。
 - 源目录为空时默认拒绝；确实要清空远端时才用 `--allow-empty`（`publish` 还需 `--resync`）。
 - bisync 基线在 `~/.cache/rclone/bisync/`，由 rclone 管理；排查问题时可以用 `rclone bisync --help` 查看当前版本的参数。

@@ -11,9 +11,9 @@ pix publish -s ./out -d r2:images --base-url https://img.example.com --urls
 pix doctor
 ```
 
-`backup` / `publish` 是双向镜像，不是单向备份：删除会双向传播。默认 `--max-delete 10`（按删除数量），超过 10 个删除时 rclone 会拒绝；首次运行或修改排除项后必须显式 `--resync`，先跑 `--dry-run` 更安全。
+`backup` / `publish` 是双向镜像，不是单向备份：删除会双向传播。默认 `--max-delete 10`（删除百分比，即 10%），超过该比例时 rclone 会拒绝；首次运行或修改排除项后必须显式 `--resync`，先跑 `--dry-run` 更安全。
 
-> Status: implementation complete; real rclone, Windows, and image-comparison smoke tests pending (see roadmap).
+> Status: implementation complete; real R2, Windows, and image-comparison smoke tests pending (see roadmap).
 
 ## Docs
 

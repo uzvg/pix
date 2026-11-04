@@ -33,7 +33,7 @@ uv build
 - `-q` 是 quality，`--quiet` 是静默。
 - 退出码 0/1/2，日志走 stderr；`backup` / `publish` 透传 rclone 退出码。
 - `backup` / `publish` 使用 `rclone bisync`；首次运行必须显式 `--resync`，不要自动加。它们是双向镜像，不是单向备份。
-- `--max-delete` 默认 10（按数量）；`backup` / `publish` 源为空时默认拒绝，`--allow-empty` 加 `--resync` 才放行。
+- `--max-delete` 默认 10（删除百分比，rclone bisync 语义）；`backup` / `publish` 源为空时默认拒绝，`--allow-empty` 加 `--resync` 才放行。
 - 修改排除项后必须提示用户先 `--resync`；`--exclude` 是配置在前、命令行追加并去重。
 - 增量状态固定在 `OUT/.pix/state.json`，每 200 个成功文件刷新并在 `finally` 落盘；`publish` 必须排除 `.pix/**`。
 - `shrink` 必须拒绝目标冲突，`--prune` 必须拒绝空源，非 dry-run 必须持有 `OUT/.pix/lock`。

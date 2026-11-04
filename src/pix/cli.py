@@ -192,7 +192,7 @@ def validate_settings(settings: dict[str, Any]) -> None:
 
     for section in ("backup", "publish"):
         _require_excludes(f"{section}.exclude", settings[section]["exclude"])
-        _require_int(f"{section}.max_delete", settings[section]["max_delete"], -1)
+        _require_int(f"{section}.max_delete", settings[section]["max_delete"], -1, 100)
 
     publish = settings["publish"]
     if not isinstance(publish["base_url"], str):
@@ -233,7 +233,13 @@ def build_parser() -> argparse.ArgumentParser:
     backup.add_argument("-s", "--source", type=Path, required=True)
     backup.add_argument("-d", "--dest", required=True)
     backup.add_argument("--exclude", action="append", default=None, metavar="GLOB")
-    backup.add_argument("--max-delete", type=int, default=None)
+    backup.add_argument(
+        "--max-delete",
+        type=int,
+        default=None,
+        metavar="PERCENT",
+        help="abort if more than PERCENT%% of files are deleted (default: 10)",
+    )
     backup.add_argument("--allow-empty", action="store_true")
     backup.add_argument("--resync", action="store_true")
     backup.add_argument("--dry-run", action="store_true")
@@ -245,7 +251,13 @@ def build_parser() -> argparse.ArgumentParser:
     publish.add_argument("--base-url", default=None)
     publish.add_argument("--urls", action=argparse.BooleanOptionalAction, default=None)
     publish.add_argument("--exclude", action="append", default=None, metavar="GLOB")
-    publish.add_argument("--max-delete", type=int, default=None)
+    publish.add_argument(
+        "--max-delete",
+        type=int,
+        default=None,
+        metavar="PERCENT",
+        help="abort if more than PERCENT%% of files are deleted (default: 10)",
+    )
     publish.add_argument("--allow-empty", action="store_true")
     publish.add_argument("--resync", action="store_true")
     publish.add_argument("--dry-run", action="store_true")
@@ -669,6 +681,7 @@ def backup(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
             "max-delete",
             args.max_delete if args.max_delete is not None else config["max_delete"],
             -1,
+            100,
         )
     except ConfigError as exc:
         log.error(str(exc))
@@ -723,6 +736,7 @@ def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> 
             "max-delete",
             args.max_delete if args.max_delete is not None else config["max_delete"],
             -1,
+            100,
         )
     except ConfigError as exc:
         log.error(str(exc))

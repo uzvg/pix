@@ -90,12 +90,12 @@ pix shrink  -s SRC -d OUT
             [--force] [--prune] [--allow-empty] [--dry-run] [-v|--quiet]
 
 pix backup  -s SRC -d REMOTE
-            [--exclude GLOB ...] [--max-delete N] [--allow-empty] [--resync]
+            [--exclude GLOB ...] [--max-delete PERCENT] [--allow-empty] [--resync]
             [--dry-run] [-v|--quiet]
 
 pix publish -s OUT -d REMOTE
             [--base-url URL] [--urls|--no-urls] [--exclude GLOB ...]
-            [--max-delete N] [--allow-empty] [--resync]
+            [--max-delete PERCENT] [--allow-empty] [--resync]
             [--dry-run] [-v|--quiet]
 
 pix doctor
@@ -112,7 +112,7 @@ pix doctor
 - `-v` 与 `--quiet` 互斥。
 - `--dry-run` 不产生本地写入；`backup` / `publish` 中原样传给 rclone。与 `shrink --prune` 同用时只列出待删除项。
 - `--exclude` 可重复。配置中的排除项在前，命令行排除项追加在后，保留顺序并去重。
-- `--max-delete` 只用于 `backup` / `publish`，按删除数量限制（不是百分比），默认 `10`；`0` 禁止删除，`-1` 不限制。超过限制时 rclone 拒绝运行。
+- `--max-delete` 只用于 `backup` / `publish`，按删除百分比限制（rclone bisync 语义，不是数量），默认 `10`（即 10%）；`0` 禁止删除，`-1` 不限制，最大 `100`。超过比例时 rclone 拒绝运行。
 - `--allow-empty` 只用于 `shrink --prune`、`backup` 和 `publish`：允许源为空时继续执行破坏性操作。默认拒绝；`backup` / `publish` 还必须同时带 `--resync`。
 - `--resync` 只用于 `backup` / `publish`，原样传给 rclone。
 - `--force` 只用于 `shrink`。
@@ -125,7 +125,7 @@ pix doctor
 - `quality` 为 1–100。
 - `effort` 为 0–9。
 - `min_size` 为非负整数，或可解析为字节数的字符串（如 `500K`、`1M`、`2G`）。
-- `max_delete` 为整数且 `>= -1`。
+- `max_delete` 为整数且位于 `-1..100`。
 - `publish.urls` 为布尔值；开启时必须能解析出 `base_url`。
 - `base_url` 必须以 `http://` 或 `https://` 开头；否则退出 2。
 
@@ -272,7 +272,7 @@ cmd.append("--progress" if verbose else "--quiet")
 - `-v` 映射 `--progress`，默认映射 `--quiet`。
 - `--exclude` 按配置在前、命令行在后合并，逐条传给 rclone；`pix` 不内置任何备份排除规则。
 - **修改排除项后必须先 `--resync`**：rclone 要求过滤器变更后重建基线，否则被排除的文件可能被当作删除传播。先跑 `--dry-run`。
-- `--max-delete` 默认 `10`，按删除数量计；一次运行要删除超过 10 个文件时 rclone 会拒绝。确认要大量删除时显式调高，或传 `-1` 取消限制。
+- `--max-delete` 默认 `10`，是删除百分比；一次运行要删除的比例超过 10% 时 rclone 会拒绝。确认要大量删除时显式调高，或传 `-1` 取消限制。
 - 双向同步意味着删除会传播：本地删除会同步到远端，远端删除也会同步到本地。首次操作建议先 `--dry-run`。
 - `-s` 必须是已存在的本地目录。源为空时默认拒绝并退出 2；只有显式 `--allow-empty` 且带 `--resync` 时才允许。
 - 启动时执行 `rclone version`，要求 `>= 1.66`；rclone 缺失或版本过旧时输出错误并返回 1。
@@ -285,7 +285,7 @@ cmd.append("--progress" if verbose else "--quiet")
 
 - `-s` 必须是已存在的本地目录，且至少包含一个 `.avif`。源为空时默认退出 2；只有显式 `--allow-empty` 且带 `--resync` 时才允许。
 - 固定追加 `--exclude .pix/**`，防止状态文件被同步到图床。配置排除项随后，命令行排除项最后，去重。
-- `--max-delete` 与 `backup` 相同，默认 `10`，按删除数量计。
+- `--max-delete` 与 `backup` 相同，默认 `10`，按删除百分比计。
 - `--base-url` 优先取命令行，其次取 `[publish].base_url`。值必须以 `http://` 或 `https://` 开头，否则退出 2。
 - `--urls` / `--no-urls` 优先取命令行，其次取 `[publish].urls`，默认关闭；`--no-urls` 可临时关闭配置中的 `true`。
 - 开启 URL 清单但没有可用的 `base_url` 时，在调用 rclone 前以退出码 2 拒绝。

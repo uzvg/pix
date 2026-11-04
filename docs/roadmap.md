@@ -7,7 +7,7 @@
 截至 2026-11-04：
 
 - 四个子命令 `shrink` / `backup` / `publish` / `doctor` 已实现，`uv run pytest` 通过。
-- 真实 rclone 端到端、Windows 原生库、真实图片字节对比仍待手工验证。
+- 真实 rclone 的本地目录端到端（首次 `--resync`、二次增量、双向删除）已验证；真实 R2、Windows 原生库、真实图片字节对比仍待手工验证。
 - 文档已按新定位重写，并完成 2026-11-04 审计修复。
 
 ## M0. 文档重写（完成）
@@ -23,7 +23,7 @@
 按 2026-11-04 审计逐项修正规格与脚手架：
 
 - [x] `--prune` 空源保护与 `--allow-empty`。
-- [x] `backup` 明确为双向镜像，新增 `--max-delete`（默认 10）。
+- [x] `backup` 明确为双向镜像，新增 `--max-delete`（默认 10%，rclone bisync 的删除百分比）。
 - [x] 目标路径冲突检测（`a.jpg` / `a.jpeg` 等）。
 - [x] 状态每 200 个文件刷新，`finally` 落盘；`out_mtime_ns` 退出跳过条件。
 - [x] `publish` 源校验：必须是含 `.avif` 的目录。
@@ -75,11 +75,11 @@
 ## M3. backup
 
 - [x] rclone 路径解析与本地源目录校验；空源默认拒绝，`--allow-empty` 加 `--resync` 才放行。
-- [x] bisync 命令拼装：`--exclude`（合并去重）、`--max-delete`（默认 10）、`--resync`、`--dry-run`、`-v` / `--quiet`。
+- [x] bisync 命令拼装：`--exclude`（合并去重）、`--max-delete`（默认 10%，百分比）、`--resync`、`--dry-run`、`-v` / `--quiet`。
 - [x] mock `subprocess.run`，断言 argv 和退出码透传。
 - [x] rclone 不存在或低于 1.66 时输出提示并返回 1。
 - [x] 修改排除项后要求 `--resync`，并在文档和错误提示中说明。
-- [ ] 首次 `--resync` 与二次增量的手工验证。
+- [x] 首次 `--resync` 与二次增量的手工验证（2026-11-04，本地临时目录；含双向删除传播）。
 
 验收：
 
@@ -91,7 +91,7 @@
 
 - [x] bisync 命令固定追加 `--exclude .pix/**`，配置排除项随后，命令行追加。
 - [x] `publish` 源必须是含至少一个 `.avif` 的目录；空源需 `--allow-empty` 加 `--resync`。
-- [x] `--max-delete` 默认 10，与 `backup` 一致。
+- [x] `--max-delete` 默认 10%，与 `backup` 一致。
 - [x] `--base-url` / `[publish].base_url` 合并，协议必须是 `http(s)://`。
 - [x] `--urls` / `--no-urls` 合并与 JSON 输出，路径段编码正确。
 - [x] 缺少 base_url 时退出 2，且在调用 rclone 前拒绝。
@@ -109,7 +109,7 @@
 - [x] rclone 缺失或低于 1.66 时提示，退出 1。
 - [x] 配置解析失败退出 2；默认配置缺失显示 `missing (using defaults)`，退出 0。
 - [x] 同时存在配置错误和依赖缺失时，退出 2。
-- [ ] `uv tool install --editable` 在 Linux 冒烟。
+- [x] `uv tool install --editable` 在 Linux 冒烟（2026-11-04，`pix --version` / `pix doctor` 通过）。
 - [ ] Windows 上确认 `pix.exe` 可用，`pyvips[binary]` 能加载。
 - [ ] 用真实图片抽样对比 `pix shrink` 与 `vips thumbnail` 的 AVIF 字节。
 
@@ -132,7 +132,7 @@
 
 | 风险 | 处理 |
 |---|---|
-| bisync 双向删除不可逆 | 默认 `--max-delete 10`；显式 `--resync`；先 `--dry-run` |
+| bisync 双向删除不可逆 | 默认 `--max-delete 10`（10% 删除比例）；显式 `--resync`；先 `--dry-run` |
 | 空目录/挂载失败被当成“删除全部” | `--prune` 空源拒绝；`backup` / `publish` 空源需 `--allow-empty` |
 | `a.jpg` 与 `a.jpeg` 争用同一输出 | 编码前冲突检测，退出 2 |
 | 修改排除项后未 resync 导致误删 | 文档与错误提示要求先 `--resync` |
