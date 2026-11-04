@@ -619,3 +619,46 @@ def test_publish_passthrough_exit_code_hides_manifest(tmp_path: Path, monkeypatc
     assert capsys.readouterr().out == ""
 
 
+def test_doctor_reports_ok(tmp_path: Path, monkeypatch, capsys):
+    config = tmp_path / "config.toml"
+    config.write_text("", encoding="utf-8")
+    fake_rclone(monkeypatch)
+
+    assert cli.main(["--config", str(config), "doctor"]) == 0
+
+    out = capsys.readouterr().out
+    assert f"pix {cli.__version__}" in out
+    assert "python " in out
+    assert "vips  8.18.7 via pyvips 3.2.0 (API mode)" in out
+    assert "rclone 1.67.0" in out
+    assert "bisync ok" in out
+    assert f"config {config} (ok)" in out
+
+
+def test_doctor_missing_default_config(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "default_config_path", lambda: tmp_path / "missing.toml")
+    fake_rclone(monkeypatch)
+
+    assert cli.main(["doctor"]) == 0
+
+    assert "missing (using defaults)" in capsys.readouterr().out
+
+
+def test_doctor_reports_old_or_missing_rclone(tmp_path: Path, monkeypatch, capsys):
+    fake_rclone(monkeypatch, version="rclone v1.65.2\n")
+    assert cli.main(["doctor"]) == 1
+    assert "too old" in capsys.readouterr().out
+
+    fake_rclone(monkeypatch, version=FileNotFoundError())
+    assert cli.main(["doctor"]) == 1
+    assert "rclone missing" in capsys.readouterr().out
+
+
+def test_doctor_invalid_config_exits_two(tmp_path: Path, capsys):
+    config = tmp_path / "config.toml"
+    config.write_text("[publish\n", encoding="utf-8")
+    assert cli.main(["--config", str(config), "doctor"]) == 2
+    assert str(config) in capsys.readouterr().err
+
+
+
