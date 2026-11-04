@@ -258,9 +258,10 @@ def shrink(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
     status = 0
     pyvips = None
     encoded: set[str] = set()
+    total = len(sources)
 
     try:
-        for src in sources:
+        for index, src in enumerate(sources, 1):
             rel = src.relative_to(source).as_posix()
             try:
                 src_stat = src.stat()
@@ -286,6 +287,8 @@ def shrink(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
                 print(rel)
                 counters["converted"] += 1
                 continue
+
+            log.progress(f"processing {index}/{total}: {rel}")
 
             if pyvips is None:
                 try:

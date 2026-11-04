@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import tomllib
@@ -7,6 +8,7 @@ import pytest
 
 from pix import cli, doctor, rclone
 from pix import config as pix_config
+from pix.logger import Logger
 
 
 def test_parse_size():
@@ -18,6 +20,22 @@ def test_parse_size():
     for bad in ("", "abc", "1.5M", "-1", "1T", True):
         with pytest.raises(ValueError):
             pix_config.parse_size(bad)
+
+
+def test_logger_progress_rewrites_on_tty(monkeypatch):
+    class FakeStderr(io.StringIO):
+        def isatty(self):
+            return True
+
+    stream = FakeStderr()
+    monkeypatch.setattr("pix.logger.sys.stderr", stream)
+
+    log = Logger()
+    log.progress("first")
+    log.progress("second")
+    log.info("done")
+
+    assert stream.getvalue() == "\rfirst\033[K\rsecond\033[K\ndone\n"
 
 
 def test_version_exits_zero(capsys):
@@ -140,6 +158,16 @@ def test_shrink_encodes_and_writes_state(tmp_path: Path):
     entry = state["files"]["sub/a.png"]
     assert entry["src_size"] == (source / "sub" / "a.png").stat().st_size
     assert entry["out_size"] == output.stat().st_size
+
+
+def test_shrink_reports_progress(tmp_path: Path, capsys):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    make_png(source / "a.png")
+
+    assert run_shrink(source, dest, "-w", "100") == 0
+
+    assert "processing 1/1: a.png" in capsys.readouterr().err
 
 
 def test_shrink_second_run_skips_unchanged(tmp_path: Path, capsys):
