@@ -7,7 +7,7 @@
 截至 2026-11-04：
 
 - 四个子命令 `shrink` / `backup` / `publish` / `doctor` 已实现，`uv run pytest` 通过。
-- 真实 rclone 的本地目录端到端（首次 `--resync`、二次增量、双向删除）已验证；真实 R2、Windows 原生库、真实图片字节对比仍待手工验证。
+- 真实 rclone 的本地目录端到端（首次 `--resync`、二次增量、双向删除）已验证；`pix shrink` 与 `vips thumbnail` 的 AVIF 字节一致性已验证。真实 R2 与 Windows 原生库仍待手工验证。
 - 文档已按新定位重写，并完成 2026-11-04 审计修复。
 
 ## M0. 文档重写（完成）
@@ -111,7 +111,7 @@
 - [x] 同时存在配置错误和依赖缺失时，退出 2。
 - [x] `uv tool install --editable` 在 Linux 冒烟（2026-11-04，`pix --version` / `pix doctor` 通过）。
 - [ ] Windows 上确认 `pix.exe` 可用，`pyvips[binary]` 能加载。
-- [ ] 用真实图片抽样对比 `pix shrink` 与 `vips thumbnail` 的 AVIF 字节。
+- [x] 用真实图片抽样对比 `pix shrink` 与 `vips thumbnail` 的 AVIF 字节（2026-11-04，libvips 8.18.7；450px 原图与 2700→1920px 缩图均 sha256 相同）。
 
 验收：
 
@@ -136,7 +136,7 @@
 | 空目录/挂载失败被当成“删除全部” | `--prune` 空源拒绝；`backup` / `publish` 空源需 `--allow-empty` |
 | `a.jpg` 与 `a.jpeg` 争用同一输出 | 编码前冲突检测，退出 2 |
 | 修改排除项后未 resync 导致误删 | 文档与错误提示要求先 `--resync` |
-| `pyvips[binary]` 与系统 libvips 版本不一致导致 AVIF 差异 | M5 用真实图片抽样对比 |
+| `pyvips[binary]` 与系统 libvips 版本不一致导致 AVIF 差异 | 已在 8.18.7 验证字节一致；升级 libvips 后重跑抽样对比 |
 | Windows 原生库加载失败 | M5 Windows 冒烟；doctor 提供安装提示 |
 | 临时文件后缀不是 `.avif` 导致格式选择错误 | 实现时固定临时文件名后缀，测试覆盖 |
 | 状态文件损坏导致误跳过 | 解析失败按空状态重建，损坏不影响输出正确性 |
