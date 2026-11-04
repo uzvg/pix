@@ -6,7 +6,7 @@ import sys
 
 
 def main() -> int:
-    print("pix: not implemented yet; see docs/requirements.md", file=sys.stderr)
+    print("pix: not implemented yet; see docs/architecture.md", file=sys.stderr)
     return 2
 
 
