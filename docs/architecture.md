@@ -47,37 +47,46 @@
 
 ```text
 src/pix/
-├── __init__.py
+├── __init__.py     # 包版本
 ├── py.typed
-└── cli.py          # 第一版全部逻辑
+├── cli.py          # 组合根：parser、main、子命令分派
+├── config.py       # 默认值、TOML 读取与校验、parse_size
+├── logger.py       # stderr 日志
+├── shrink.py       # shrink 子命令
+├── rclone.py       # rclone 探测、版本检查与执行
+├── sync.py         # backup / publish 子命令
+└── doctor.py       # doctor 子命令
 tests/
 └── test_cli.py
 ```
 
 入口点：`pix = "pix.cli:main"`。`main()` 返回 `int`，`__main__` 中 `raise SystemExit(main())`。
 
-第一版所有逻辑放在 `src/pix/cli.py`；拆分条件见 [decisions.md](decisions.md) D5。拆分后 `cli.py` 仍为组合根，不反向依赖其他模块。
+`cli.py` 只承担参数解析、子命令分派和组合根职责；低层模块不反向依赖它。拆分理由见 [decisions.md](decisions.md) D27。
 
-计划中的函数边界：
+函数边界：
 
-| 函数 | 职责 |
-|---|---|
-| `main(argv: list[str] \| None = None) -> int` | 解析全局参数，分派子命令，返回退出码 |
-| `load_config(path: Path) -> dict` | 读取 TOML；默认路径不存在时返回空覆盖 |
-| `parse_size(value: str) -> int` | 尺寸字符串转字节 |
-| `shrink(args, config) -> int` | `shrink` 子命令 |
-| `backup(args, config) -> int` | `backup` 子命令 |
-| `publish(args, config) -> int` | `publish` 子命令 |
-| `doctor(args, config) -> int` | `doctor` 子命令 |
-| `run_rclone(cmd: list[str]) -> int` | 调用 rclone 并返回其退出码 |
+| 模块 | 函数 | 职责 |
+|---|---|---|
+| `cli` | `main(argv: list[str] \| None = None) -> int` | 解析全局参数，分派子命令，返回退出码 |
+| `cli` | `build_parser() -> argparse.ArgumentParser` | 构建主 parser 和子命令参数 |
+| `config` | `load_config(path: Path) -> dict` | 读取 TOML；默认路径不存在时返回空覆盖 |
+| `config` | `load_settings(path: Path \| None) -> dict` | 合并默认值并校验 |
+| `config` | `parse_size(value: str \| int) -> int` | 尺寸字符串转字节 |
+| `shrink` | `shrink(args, settings, log) -> int` | `shrink` 子命令 |
+| `sync` | `backup(args, settings, log) -> int` | `backup` 子命令 |
+| `sync` | `publish(args, settings, log) -> int` | `publish` 子命令 |
+| `doctor` | `doctor(args, settings, log) -> int` | `doctor` 子命令 |
+| `rclone` | `run_rclone(cmd: list[str]) -> int` | 调用 rclone 并返回其退出码 |
 
 依赖方向：
 
 ```text
-pix.cli ──> 标准库（argparse / tomllib / pathlib / subprocess / json）
-   │
-   ├──> pyvips    仅 shrink / doctor 内延迟导入
-   └──> rclone    仅 backup / publish 中通过 subprocess 调用
+pix.cli ──> pix.config / pix.logger / pix.shrink / pix.sync / pix.doctor
+pix.shrink ──> pix.config / pix.logger / pyvips（仅函数内延迟导入）
+pix.sync ──> pix.config / pix.logger / pix.rclone
+pix.doctor ──> pix.config / pix.rclone / pix.shrink（提示文本）/ pyvips（延迟导入）
+pix.rclone ──> subprocess
 ```
 
 ## 3. CLI 契约

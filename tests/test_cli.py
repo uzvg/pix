@@ -4,18 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from pix import cli
+from pix import cli, doctor, rclone
+from pix import config as pix_config
 
 
 def test_parse_size():
-    assert cli.parse_size("0") == 0
-    assert cli.parse_size("500K") == 500 * 1024
-    assert cli.parse_size("1m") == 1024**2
-    assert cli.parse_size("2G") == 2 * 1024**3
-    assert cli.parse_size(123) == 123
+    assert pix_config.parse_size("0") == 0
+    assert pix_config.parse_size("500K") == 500 * 1024
+    assert pix_config.parse_size("1m") == 1024**2
+    assert pix_config.parse_size("2G") == 2 * 1024**3
+    assert pix_config.parse_size(123) == 123
     for bad in ("", "abc", "1.5M", "-1", "1T", True):
         with pytest.raises(ValueError):
-            cli.parse_size(bad)
+            pix_config.parse_size(bad)
 
 
 def test_version_exits_zero(capsys):
@@ -32,11 +33,11 @@ def test_config_priority_and_defaults(tmp_path: Path):
     config = tmp_path / "config.toml"
     config.write_text("[shrink]\nwidth = 1000\nquality = 70\n", encoding="utf-8")
 
-    settings = cli.load_settings(config)
+    settings = pix_config.load_settings(config)
 
     assert settings["shrink"]["width"] == 1000
     assert settings["shrink"]["quality"] == 70
-    assert settings["shrink"]["effort"] == cli.DEFAULTS["shrink"]["effort"]
+    assert settings["shrink"]["effort"] == pix_config.DEFAULTS["shrink"]["effort"]
     assert settings["publish"]["max_delete"] == 10
 
 
@@ -56,14 +57,14 @@ def test_invalid_config_value_exits_two(tmp_path: Path, capsys):
 def test_config_section_must_be_table(tmp_path: Path):
     config = tmp_path / "config.toml"
     config.write_text("shrink = 5\n", encoding="utf-8")
-    with pytest.raises(cli.ConfigError):
-        cli.load_settings(config)
+    with pytest.raises(pix_config.ConfigError):
+        pix_config.load_settings(config)
 
 
 def test_config_min_size_accepts_string(tmp_path: Path):
     config = tmp_path / "config.toml"
     config.write_text('[shrink]\nmin_size = "500K"\n', encoding="utf-8")
-    assert cli.load_settings(config)["shrink"]["min_size"] == 500 * 1024
+    assert pix_config.load_settings(config)["shrink"]["min_size"] == 500 * 1024
 
 
 def make_png(path: Path, width: int = 200, height: int = 100) -> None:
@@ -327,7 +328,7 @@ def fake_rclone(monkeypatch, bisync_code: int = 0, version: str | Exception = "r
             return FakeResult(0, version)
         return FakeResult(bisync_code)
 
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(rclone.subprocess, "run", fake_run)
     return calls
 
 
@@ -667,7 +668,7 @@ def test_doctor_reports_ok(tmp_path: Path, monkeypatch, capsys):
 
 
 def test_doctor_missing_default_config(tmp_path: Path, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "default_config_path", lambda: tmp_path / "missing.toml")
+    monkeypatch.setattr(doctor, "default_config_path", lambda: tmp_path / "missing.toml")
     fake_rclone(monkeypatch)
 
     assert cli.main(["doctor"]) == 0
