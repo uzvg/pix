@@ -27,6 +27,7 @@
 - `pix backup`：把原始图片目录与 rclone 远端双向同步。
 - `pix publish`：把压缩目录与图床远端双向同步，可选输出公开 URL 清单。
 - `pix doctor`：检查运行依赖、rclone bisync 能力和配置。
+- `pix config init`：把带注释的默认配置写到默认路径，供用户修改。
 - 可选的用户默认配置 `~/.config/pix/config.toml`。
 - 单元测试和基本集成测试。
 
@@ -50,7 +51,7 @@ src/pix/
 ├── __init__.py     # 包版本
 ├── py.typed
 ├── cli.py          # 组合根：parser、main、子命令分派
-├── config.py       # 默认值、TOML 读取与校验、parse_size
+├── config.py       # 默认值、TOML 读取与校验、parse_size、config init
 ├── logger.py       # stderr 日志
 ├── shrink.py       # shrink 子命令
 ├── rclone.py       # rclone 探测、版本检查与执行
@@ -73,6 +74,7 @@ tests/
 | `config` | `load_config(path: Path) -> dict` | 读取 TOML；默认路径不存在时返回空覆盖 |
 | `config` | `load_settings(path: Path \| None) -> dict` | 合并默认值并校验 |
 | `config` | `parse_size(value: str \| int) -> int` | 尺寸字符串转字节 |
+| `config` | `init_config(args) -> int` | `config init` 子命令：写入默认配置 |
 | `shrink` | `shrink(args, settings, log) -> int` | `shrink` 子命令 |
 | `sync` | `backup(args, settings, log) -> int` | `backup` 子命令 |
 | `sync` | `publish(args, settings, log) -> int` | `publish` 子命令 |
@@ -92,7 +94,7 @@ pix.rclone ──> subprocess
 ## 3. CLI 契约
 
 ```bash
-pix [--config PATH] [--version] {shrink,backup,publish,doctor}
+pix [--config PATH] [--version] {shrink,backup,publish,doctor,config}
 
 pix shrink  -s SRC -d OUT
             [-w 1920] [-q 85] [-e 5] [-m 0]
@@ -108,6 +110,8 @@ pix publish -s OUT -d REMOTE
             [--dry-run] [-v|--quiet]
 
 pix doctor
+
+pix config init [--force]
 ```
 
 约定：
@@ -178,6 +182,8 @@ binary = "rclone"
 `--no-urls` 是显式命令行值，优先级高于 `[publish].urls = true`；`--max-delete` 同样按“命令行 > 配置 > 默认 10”合并。
 
 `--config` 显式指向的文件不存在时视为配置错误，退出 2；默认路径不存在则静默使用内置默认。
+
+生成配置：`pix config init` 把内置模板写到 `--config` 指定路径（未指定时为默认路径），自动创建父目录，成功后打印路径并以 0 退出。目标已存在时拒绝覆盖并退出 2，提示使用 `--force`。该命令不读取现有配置，因此在 `load_settings` 之前分派，`--config` 指向尚不存在的文件也能创建。
 
 `include` 中的扩展名不带点，匹配时大小写不敏感。
 

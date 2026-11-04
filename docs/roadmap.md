@@ -7,6 +7,7 @@
 截至 2026-11-04：
 
 - 四个子命令 `shrink` / `backup` / `publish` / `doctor` 已实现，`uv run pytest` 通过。
+- `pix config init` 可生成带注释的默认配置；`--force` 覆盖已有文件。
 - 真实 rclone 的本地目录端到端（首次 `--resync`、二次增量、双向删除）已验证；`pix shrink` 与 `vips thumbnail` 的 AVIF 字节一致性已验证。真实 R2 与 Windows 原生库仍待手工验证。
 - 文档已按新定位重写，并完成 2026-11-04 审计修复。
 - 2026-11-04：`cli.py` 已按职责拆分，`cli.py` 作为组合根（D27）。

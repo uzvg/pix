@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`pix` 是批量图片压缩（AVIF）与 rclone 图床同步 CLI。已实现 `shrink` / `backup` / `publish` / `doctor`；行为规格见 `docs/architecture.md`。
+`pix` 是批量图片压缩（AVIF）与 rclone 图床同步 CLI。已实现 `shrink` / `backup` / `publish` / `doctor` / `config init`；行为规格见 `docs/architecture.md`。
 
 ## 文档
 

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .config import ConfigError, load_settings
+from .config import ConfigError, init_config, load_settings
 from .doctor import doctor
 from .logger import Logger
 from .shrink import shrink
@@ -75,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("doctor", help="check runtime dependencies and configuration")
 
+    config = subparsers.add_parser("config", help="manage the configuration file")
+    config_sub = config.add_subparsers(dest="config_command", required=True)
+    init = config_sub.add_parser("init", help="write the default config file")
+    init.add_argument("--force", action="store_true")
+
     return parser
 
 
@@ -84,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv)
     except SystemExit as exc:  # --help/--version and argparse errors
         return int(exc.code) if isinstance(exc.code, int) else 0
+
+    if args.command == "config":
+        return init_config(args)
 
     try:
         settings = load_settings(args.config)

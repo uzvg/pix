@@ -1,5 +1,6 @@
 import json
 import os
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,45 @@ def test_config_min_size_accepts_string(tmp_path: Path):
     config = tmp_path / "config.toml"
     config.write_text('[shrink]\nmin_size = "500K"\n', encoding="utf-8")
     assert pix_config.load_settings(config)["shrink"]["min_size"] == 500 * 1024
+
+
+def test_config_init_writes_defaults(tmp_path: Path, capsys):
+    config = tmp_path / "nested" / "config.toml"
+
+    assert cli.main(["--config", str(config), "config", "init"]) == 0
+
+    assert capsys.readouterr().out.strip() == f"wrote {config}"
+    assert tomllib.loads(config.read_text(encoding="utf-8")) == pix_config.DEFAULTS
+    assert pix_config.load_settings(config)["shrink"]["width"] == 1920
+
+
+def test_config_init_refuses_existing(tmp_path: Path, capsys):
+    config = tmp_path / "config.toml"
+    config.write_text("[shrink]\nquality = 60\n", encoding="utf-8")
+
+    assert cli.main(["--config", str(config), "config", "init"]) == 2
+
+    assert "already exists" in capsys.readouterr().err
+    assert config.read_text(encoding="utf-8") == "[shrink]\nquality = 60\n"
+
+
+def test_config_init_force_overwrites(tmp_path: Path, capsys):
+    config = tmp_path / "config.toml"
+    config.write_text("[shrink]\nquality = 60\n", encoding="utf-8")
+
+    assert cli.main(["--config", str(config), "config", "init", "--force"]) == 0
+
+    assert tomllib.loads(config.read_text(encoding="utf-8")) == pix_config.DEFAULTS
+    assert capsys.readouterr().out.strip() == f"wrote {config}"
+
+
+def test_config_init_uses_default_path(tmp_path: Path, monkeypatch):
+    target = tmp_path / "config.toml"
+    monkeypatch.setattr(pix_config, "default_config_path", lambda: target)
+
+    assert cli.main(["config", "init"]) == 0
+
+    assert target.is_file()
 
 
 def make_png(path: Path, width: int = 200, height: int = 100) -> None:
