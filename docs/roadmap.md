@@ -6,9 +6,8 @@
 
 截至 2026-11-04：
 
-- 项目处于脚手架阶段。
-- `src/pix/cli.py` 的 `main()` 只打印“未实现”并返回 2。
-- `tests/test_cli.py` 提供冒烟测试，`uv run pytest` 通过。
+- 四个子命令 `shrink` / `backup` / `publish` / `doctor` 已实现，`uv run pytest` 通过。
+- 真实 rclone 端到端、Windows 原生库、真实图片字节对比仍待手工验证。
 - 文档已按新定位重写，并完成 2026-11-04 审计修复。
 
 ## M0. 文档重写（完成）
@@ -41,11 +40,11 @@
 
 ## M1. CLI 骨架
 
-- [ ] argparse 主 parser + `shrink` / `backup` / `publish` / `doctor` 子命令。
-- [ ] 全局 `--config`、`--version`。
-- [ ] 配置加载与三层合并，argparse 默认值使用哨兵。
-- [ ] 日志级别：默认、`-v`、`--quiet`。
-- [ ] 参数校验与退出码 2，包括 `min_size` 整数/字符串、`base_url` 协议、`--urls` / `--no-urls`。
+- [x] argparse 主 parser + `shrink` / `backup` / `publish` / `doctor` 子命令。
+- [x] 全局 `--config`、`--version`。
+- [x] 配置加载与三层合并，argparse 默认值使用哨兵。
+- [x] 日志级别：默认、`-v`、`--quiet`。
+- [x] 参数校验与退出码 2，包括 `min_size` 整数/字符串、`base_url` 协议、`--urls` / `--no-urls`。
 
 验收：
 
@@ -55,17 +54,17 @@
 
 ## M2. shrink 与增量状态
 
-- [ ] `parse_size`：`500K` / `1M` / `2G` / `0` / 非法值。
-- [ ] 递归扫描与扩展名过滤（大小写不敏感）。
-- [ ] 目标路径映射与冲突检测，扩展名替换为 `.avif`。
-- [ ] `.pix/state.json` 读写、参数指纹、每 200 个文件刷新、`finally` 落盘。
-- [ ] 跳过规则：状态命中、`min_size`、目标 size；`--force` 覆盖，不比较输出 mtime。
-- [ ] `--prune` 清理源已消失的输出；0 个源时拒绝，除非 `--allow-empty`。
-- [ ] 非 dry-run 持有 `OUT/.pix/lock`，退出时删除。
-- [ ] 临时文件 + `os.replace` 原子写入，失败清理。
-- [ ] 单文件失败隔离与汇总，失败返回 1。
-- [ ] `--dry-run` 只打印计划（含 `prune <path>`），不写文件、不建锁。
-- [ ] 真实 shrink 测试：生成 PNG，断言 AVIF 存在且宽度正确。
+- [x] `parse_size`：`500K` / `1M` / `2G` / `0` / 非法值。
+- [x] 递归扫描与扩展名过滤（大小写不敏感）。
+- [x] 目标路径映射与冲突检测，扩展名替换为 `.avif`。
+- [x] `.pix/state.json` 读写、参数指纹、每 200 个文件刷新、`finally` 落盘。
+- [x] 跳过规则：状态命中、`min_size`、目标 size；`--force` 覆盖，不比较输出 mtime。
+- [x] `--prune` 清理源已消失的输出；0 个源时拒绝，除非 `--allow-empty`。
+- [x] 非 dry-run 持有 `OUT/.pix/lock`，退出时删除。
+- [x] 临时文件 + `os.replace` 原子写入，失败清理。
+- [x] 单文件失败隔离与汇总，失败返回 1。
+- [x] `--dry-run` 只打印计划（含 `prune <path>`），不写文件、不建锁。
+- [x] 真实 shrink 测试：生成 PNG，断言 AVIF 存在且宽度正确。
 
 验收：
 
@@ -75,11 +74,11 @@
 
 ## M3. backup
 
-- [ ] rclone 路径解析与本地源目录校验；空源默认拒绝，`--allow-empty` 加 `--resync` 才放行。
-- [ ] bisync 命令拼装：`--exclude`（合并去重）、`--max-delete`（默认 10）、`--resync`、`--dry-run`、`-v` / `--quiet`。
-- [ ] mock `subprocess.run`，断言 argv 和退出码透传。
-- [ ] rclone 不存在或低于 1.66 时输出提示并返回 1。
-- [ ] 修改排除项后要求 `--resync`，并在文档和错误提示中说明。
+- [x] rclone 路径解析与本地源目录校验；空源默认拒绝，`--allow-empty` 加 `--resync` 才放行。
+- [x] bisync 命令拼装：`--exclude`（合并去重）、`--max-delete`（默认 10）、`--resync`、`--dry-run`、`-v` / `--quiet`。
+- [x] mock `subprocess.run`，断言 argv 和退出码透传。
+- [x] rclone 不存在或低于 1.66 时输出提示并返回 1。
+- [x] 修改排除项后要求 `--resync`，并在文档和错误提示中说明。
 - [ ] 首次 `--resync` 与二次增量的手工验证。
 
 验收：
@@ -90,13 +89,13 @@
 
 ## M4. publish
 
-- [ ] bisync 命令固定追加 `--exclude .pix/**`，配置排除项随后，命令行追加。
-- [ ] `publish` 源必须是含至少一个 `.avif` 的目录；空源需 `--allow-empty` 加 `--resync`。
-- [ ] `--max-delete` 默认 10，与 `backup` 一致。
-- [ ] `--base-url` / `[publish].base_url` 合并，协议必须是 `http(s)://`。
-- [ ] `--urls` / `--no-urls` 合并与 JSON 输出，路径段编码正确。
-- [ ] 缺少 base_url 时退出 2，且在调用 rclone 前拒绝。
-- [ ] `--dry-run` 不输出 URL 清单。
+- [x] bisync 命令固定追加 `--exclude .pix/**`，配置排除项随后，命令行追加。
+- [x] `publish` 源必须是含至少一个 `.avif` 的目录；空源需 `--allow-empty` 加 `--resync`。
+- [x] `--max-delete` 默认 10，与 `backup` 一致。
+- [x] `--base-url` / `[publish].base_url` 合并，协议必须是 `http(s)://`。
+- [x] `--urls` / `--no-urls` 合并与 JSON 输出，路径段编码正确。
+- [x] 缺少 base_url 时退出 2，且在调用 rclone 前拒绝。
+- [x] `--dry-run` 不输出 URL 清单。
 
 验收：
 
@@ -105,11 +104,11 @@
 
 ## M5. doctor 与发布验证
 
-- [ ] 输出 pix、Python、vips、rclone、bisync 能力、配置状态。
-- [ ] pyvips/libvips 缺失提示，退出 1。
-- [ ] rclone 缺失或低于 1.66 时提示，退出 1。
-- [ ] 配置解析失败退出 2；默认配置缺失显示 `missing (using defaults)`，退出 0。
-- [ ] 同时存在配置错误和依赖缺失时，退出 2。
+- [x] 输出 pix、Python、vips、rclone、bisync 能力、配置状态。
+- [x] pyvips/libvips 缺失提示，退出 1。
+- [x] rclone 缺失或低于 1.66 时提示，退出 1。
+- [x] 配置解析失败退出 2；默认配置缺失显示 `missing (using defaults)`，退出 0。
+- [x] 同时存在配置错误和依赖缺失时，退出 2。
 - [ ] `uv tool install --editable` 在 Linux 冒烟。
 - [ ] Windows 上确认 `pix.exe` 可用，`pyvips[binary]` 能加载。
 - [ ] 用真实图片抽样对比 `pix shrink` 与 `vips thumbnail` 的 AVIF 字节。

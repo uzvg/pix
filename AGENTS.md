@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`pix` 是批量图片压缩（AVIF）与 rclone 图床同步 CLI。当前是脚手架：`src/pix/cli.py` 的 `main()` 只打印未实现并返回 2。
+`pix` 是批量图片压缩（AVIF）与 rclone 图床同步 CLI。已实现 `shrink` / `backup` / `publish` / `doctor`；行为规格见 `docs/architecture.md`。
 
 ## 文档
 
