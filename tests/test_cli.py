@@ -53,6 +53,19 @@ def test_invalid_config_value_exits_two(tmp_path: Path, capsys):
     assert "shrink.quality" in capsys.readouterr().err
 
 
+def test_config_section_must_be_table(tmp_path: Path):
+    config = tmp_path / "config.toml"
+    config.write_text("shrink = 5\n", encoding="utf-8")
+    with pytest.raises(cli.ConfigError):
+        cli.load_settings(config)
+
+
+def test_config_min_size_accepts_string(tmp_path: Path):
+    config = tmp_path / "config.toml"
+    config.write_text('[shrink]\nmin_size = "500K"\n', encoding="utf-8")
+    assert cli.load_settings(config)["shrink"]["min_size"] == 500 * 1024
+
+
 def make_png(path: Path, width: int = 200, height: int = 100) -> None:
     import pyvips
 

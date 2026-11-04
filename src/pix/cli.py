@@ -171,6 +171,10 @@ def _require_excludes(name: str, value: Any) -> list[str]:
 
 
 def validate_settings(settings: dict[str, Any]) -> None:
+    for section in ("shrink", "backup", "publish", "rclone"):
+        if not isinstance(settings.get(section), dict):
+            raise ConfigError(f"[{section}] must be a table")
+
     shrink = settings["shrink"]
     _require_int("shrink.width", shrink["width"], 1)
     _require_int("shrink.quality", shrink["quality"], 1, 100)
@@ -438,7 +442,11 @@ def shrink(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
         log.error(f"dest is not a directory: {dest}")
         return 2
 
-    sources = _scan_sources(source, config["include"])
+    try:
+        sources = _scan_sources(source, config["include"])
+    except OSError as exc:
+        log.error(f"cannot scan {source}: {exc}")
+        return 1
     targets, conflicts = _target_map(sources, source, dest)
     if conflicts:
         log.error("multiple sources map to the same output:")
@@ -666,7 +674,12 @@ def backup(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
         log.error(str(exc))
         return 2
 
-    if not _has_files(source) and not (args.allow_empty and args.resync):
+    try:
+        has_files = _has_files(source)
+    except OSError as exc:
+        log.error(f"cannot scan {source}: {exc}")
+        return 1
+    if not has_files and not (args.allow_empty and args.resync):
         log.error("source is empty; use --allow-empty together with --resync to proceed")
         return 2
 
@@ -715,7 +728,11 @@ def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> 
         log.error(str(exc))
         return 2
 
-    avifs = _collect_avif(source)
+    try:
+        avifs = _collect_avif(source)
+    except OSError as exc:
+        log.error(f"cannot scan {source}: {exc}")
+        return 1
     if not avifs and not (args.allow_empty and args.resync):
         log.error(
             "source contains no .avif files; use --allow-empty together with --resync "
@@ -755,9 +772,14 @@ def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> 
         return code
 
     root = base_url.rstrip("/")
+    try:
+        files = _collect_avif(source)
+    except OSError as exc:
+        log.error(f"cannot scan {source}: {exc}")
+        return 1
     manifest = {
         rel: f"{root}/{quote(rel, safe='/')}"
-        for rel in (path.relative_to(source).as_posix() for path in _collect_avif(source))
+        for rel in (path.relative_to(source).as_posix() for path in files)
     }
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
     return code
