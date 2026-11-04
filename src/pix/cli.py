@@ -12,6 +12,7 @@ import sys
 import tomllib
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 try:
     from importlib.metadata import PackageNotFoundError
@@ -679,6 +680,78 @@ def backup(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
     return run_rclone(cmd)
 
 
+def _collect_avif(source: Path) -> list[Path]:
+    files = [
+        path for path in source.rglob("*") if path.is_file() and path.suffix.lower() == ".avif"
+    ]
+    files.sort(key=lambda path: path.relative_to(source).as_posix())
+    return files
+
+
+def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> int:
+    config = settings["publish"]
+    source = args.source
+    if not source.is_dir():
+        log.error(f"source is not a directory: {source}")
+        return 2
+    try:
+        max_delete = _require_int(
+            "max-delete",
+            args.max_delete if args.max_delete is not None else config["max_delete"],
+            -1,
+        )
+    except ConfigError as exc:
+        log.error(str(exc))
+        return 2
+
+    avifs = _collect_avif(source)
+    if not avifs and not (args.allow_empty and args.resync):
+        log.error(
+            "source contains no .avif files; use --allow-empty together with --resync "
+            "to proceed"
+        )
+        return 2
+
+    base_url = args.base_url if args.base_url is not None else config["base_url"]
+    urls = args.urls if args.urls is not None else config["urls"]
+    if base_url and not base_url.startswith(("http://", "https://")):
+        log.error("base-url must start with http:// or https://")
+        return 2
+    if urls and not base_url:
+        log.error("--urls requires a base URL (--base-url or [publish].base_url)")
+        return 2
+
+    binary = settings["rclone"]["binary"]
+    version = _check_rclone(binary, log)
+    if version is None:
+        return 1
+
+    excludes = _merge_excludes([".pix/**"], config["exclude"], args.exclude)
+    cmd = [binary, "bisync", str(source), args.dest]
+    for pattern in excludes:
+        cmd += ["--exclude", pattern]
+    cmd += ["--max-delete", str(max_delete)]
+    if args.resync:
+        cmd.append("--resync")
+    if args.dry_run:
+        cmd.append("--dry-run")
+    cmd.append("--progress" if args.verbose else "--quiet")
+
+    log.info(f"bisync {source} <-> {args.dest} (rclone {version})")
+    log.detail(" ".join(cmd))
+    code = run_rclone(cmd)
+    if code != 0 or args.dry_run or not urls:
+        return code
+
+    root = base_url.rstrip("/")
+    manifest = {
+        rel: f"{root}/{quote(rel, safe='/')}"
+        for rel in (path.relative_to(source).as_posix() for path in avifs)
+    }
+    print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
+    return code
+
+
 def _not_implemented(_args: argparse.Namespace, _settings: dict[str, Any], log: Logger) -> int:
     log.error("subcommand not implemented yet; see docs/architecture.md")
     return 2
@@ -701,7 +774,7 @@ def main(argv: list[str] | None = None) -> int:
     handlers = {
         "shrink": shrink,
         "backup": backup,
-        "publish": _not_implemented,
+        "publish": publish,
         "doctor": _not_implemented,
     }
     return handlers[args.command](args, settings, log)

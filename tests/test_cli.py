@@ -429,3 +429,193 @@ def test_backup_rejects_invalid_max_delete(tmp_path: Path, monkeypatch):
     ) == 2
     assert calls == []
 
+
+def make_avif_source(tmp_path: Path, *names: str) -> Path:
+    source = tmp_path / "out"
+    source.mkdir()
+    for name in names:
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"avif")
+    return source
+
+
+def test_publish_builds_bisync_command_with_pix_exclude(tmp_path: Path, monkeypatch):
+    source = make_avif_source(tmp_path, "a.avif")
+    config = tmp_path / "config.toml"
+    config.write_text('[publish]\nexclude = ["cfg", ".pix/**"]\n', encoding="utf-8")
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        [
+            "--config",
+            str(config),
+            "publish",
+            "-s",
+            str(source),
+            "-d",
+            "r2:images",
+            "--exclude",
+            "cli",
+        ]
+    ) == 0
+
+    assert calls[1] == [
+        "rclone",
+        "bisync",
+        str(source),
+        "r2:images",
+        "--exclude",
+        ".pix/**",
+        "--exclude",
+        "cfg",
+        "--exclude",
+        "cli",
+        "--max-delete",
+        "10",
+        "--quiet",
+    ]
+
+
+def test_publish_requires_avif(tmp_path: Path, monkeypatch, capsys):
+    source = tmp_path / "out"
+    source.mkdir()
+    (source / "note.txt").write_text("x", encoding="utf-8")
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(["publish", "-s", str(source), "-d", "r2:images"]) == 2
+
+    assert calls == []
+    assert "no .avif" in capsys.readouterr().err
+
+
+def test_publish_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
+    source = tmp_path / "out"
+    source.mkdir()
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        ["publish", "-s", str(source), "-d", "r2:images", "--allow-empty"]
+    ) == 2
+    assert calls == []
+
+    assert cli.main(
+        [
+            "publish",
+            "-s",
+            str(source),
+            "-d",
+            "r2:images",
+            "--allow-empty",
+            "--resync",
+        ]
+    ) == 0
+    assert "--resync" in calls[1]
+
+
+def test_publish_outputs_sorted_encoded_url_manifest(tmp_path: Path, monkeypatch, capsys):
+    source = make_avif_source(tmp_path, "2024/a b.avif", "z.avif")
+    fake_rclone(monkeypatch)
+
+    assert cli.main(
+        [
+            "publish",
+            "-s",
+            str(source),
+            "-d",
+            "r2:images",
+            "--base-url",
+            "https://img.example.com/",
+            "--urls",
+        ]
+    ) == 0
+
+    manifest = json.loads(capsys.readouterr().out)
+    assert list(manifest) == ["2024/a b.avif", "z.avif"]
+    assert manifest["2024/a b.avif"] == "https://img.example.com/2024/a%20b.avif"
+    assert manifest["z.avif"] == "https://img.example.com/z.avif"
+
+
+def test_publish_no_urls_overrides_config(tmp_path: Path, monkeypatch, capsys):
+    source = make_avif_source(tmp_path, "a.avif")
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[publish]\nbase_url = "https://img.example.com"\nurls = true\n', encoding="utf-8"
+    )
+    fake_rclone(monkeypatch)
+
+    assert cli.main(
+        ["--config", str(config), "publish", "-s", str(source), "-d", "r2:images", "--no-urls"]
+    ) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_publish_urls_requires_base_url(tmp_path: Path, monkeypatch):
+    source = make_avif_source(tmp_path, "a.avif")
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        ["publish", "-s", str(source), "-d", "r2:images", "--urls"]
+    ) == 2
+    assert calls == []
+
+
+def test_publish_rejects_invalid_base_url(tmp_path: Path, monkeypatch):
+    source = make_avif_source(tmp_path, "a.avif")
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        [
+            "publish",
+            "-s",
+            str(source),
+            "-d",
+            "r2:images",
+            "--base-url",
+            "ftp://img.example.com",
+        ]
+    ) == 2
+    assert calls == []
+
+
+def test_publish_dry_run_outputs_no_manifest(tmp_path: Path, monkeypatch, capsys):
+    source = make_avif_source(tmp_path, "a.avif")
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        [
+            "publish",
+            "-s",
+            str(source),
+            "-d",
+            "r2:images",
+            "--base-url",
+            "https://img.example.com",
+            "--urls",
+            "--dry-run",
+        ]
+    ) == 0
+
+    assert capsys.readouterr().out == ""
+    assert "--dry-run" in calls[1]
+
+
+def test_publish_passthrough_exit_code_hides_manifest(tmp_path: Path, monkeypatch, capsys):
+    source = make_avif_source(tmp_path, "a.avif")
+    fake_rclone(monkeypatch, bisync_code=5)
+
+    assert cli.main(
+        [
+            "publish",
+            "-s",
+            str(source),
+            "-d",
+            "r2:images",
+            "--base-url",
+            "https://img.example.com",
+            "--urls",
+        ]
+    ) == 5
+    assert capsys.readouterr().out == ""
+
+
