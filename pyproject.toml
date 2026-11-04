@@ -3,6 +3,7 @@ name = "pix-cli"
 version = "0.1.0"
 description = "Batch AVIF shrink and image-host sync CLI"
 readme = "README.md"
+license = { text = "MIT" }
 authors = [
     { name = "uzvg", email = "uzvg@qq.com" }
 ]
