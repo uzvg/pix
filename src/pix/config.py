@@ -34,41 +34,6 @@ DEFAULTS: dict[str, Any] = {
     },
 }
 
-DEFAULT_TOML = """\
-# pix configuration
-# Command-line flags override these values.
-
-[shrink]
-# Longest edge in pixels.
-width = 1920
-# AVIF quality, 1-100.
-quality = 85
-# libvips effort, 0-9 (higher is slower).
-effort = 5
-# Skip sources smaller than this; accepts bytes or 0, 500K, 1M, 2G.
-min_size = 0
-# Extensions to scan, written without dots.
-include = ["jpg", "jpeg", "png", "webp"]
-
-[backup]
-# rclone exclude globs; command-line --exclude is appended after these.
-exclude = []
-# Maximum percent of files rclone may delete (-1 disables, 0 forbids).
-max_delete = 10
-
-[publish]
-# Public URL prefix; must start with http:// or https://.
-base_url = ""
-# Emit a JSON URL manifest.
-urls = false
-exclude = []
-max_delete = 10
-
-[rclone]
-# rclone executable name or path.
-binary = "rclone"
-"""
-
 _SIZE_RE = re.compile(r"^(\d+)([KMG]?)$", re.IGNORECASE)
 _SIZE_UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}
 
@@ -197,8 +162,9 @@ def init_config(args: argparse.Namespace) -> int:
         )
         return 2
     try:
+        template = Path(__file__).with_name("default_config.toml").read_text(encoding="utf-8")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(DEFAULT_TOML, encoding="utf-8")
+        path.write_text(template, encoding="utf-8")
     except OSError as exc:
         print(f"pix: error: {path}: {exc}", file=sys.stderr)
         return 2

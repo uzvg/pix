@@ -172,6 +172,6 @@
 
 ## D28. 默认配置用内置模板生成
 
-**决策**：`pix config init` 写出 `config.py` 中的常量字符串 `DEFAULT_TOML`，而不是把 `DEFAULTS` 序列化成 TOML。目标文件已存在时拒绝覆盖并退出 2，`--force` 才覆盖；该命令在 `load_settings` 之前分派。
+**决策**：`pix config init` 写出随包分发的 `src/pix/default_config.toml`，而不是把 `DEFAULTS` 序列化成 TOML。目标文件已存在时拒绝覆盖并退出 2，`--force` 才覆盖；该命令在 `load_settings` 之前分派。
 
-**原因**：Python 3.11 标准库只有 `tomllib`，没有 TOML 写入器；引入 `tomli-w` 违反“仅标准库 + pyvips”的约束。常量模板可以直接带注释，用户打开就能改；测试把模板解析后与 `DEFAULTS` 比对，防止两者漂移。拒绝覆盖保护用户已经修改过的配置，误覆盖的代价远高于多敲一个 `--force`。提前分派让 `--config` 指向新路径时也能创建工作，而不是被“config file not found”挡住。
+**原因**：Python 3.11 标准库只有 `tomllib`，没有 TOML 写入器；引入 `tomli-w` 违反“仅标准库 + pyvips”的约束。独立文件可以直接带注释，用户打开就能改，编辑器也能按 TOML 高亮；测试把模板解析后与 `DEFAULTS` 比对，防止两者漂移。拒绝覆盖保护用户已经修改过的配置，误覆盖的代价远高于多敲一个 `--force`。提前分派让 `--config` 指向新路径时也能创建工作，而不是被“config file not found”挡住。

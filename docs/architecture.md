@@ -52,6 +52,7 @@ src/pix/
 ├── py.typed
 ├── cli.py          # 组合根：parser、main、子命令分派
 ├── config.py       # 默认值、TOML 读取与校验、parse_size、config init
+├── default_config.toml  # config init 写入的模板（随包分发）
 ├── logger.py       # stderr 日志
 ├── shrink.py       # shrink 子命令
 ├── rclone.py       # rclone 探测、版本检查与执行
