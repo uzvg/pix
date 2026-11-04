@@ -7,6 +7,7 @@ import copy
 import json
 import os
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -574,6 +575,110 @@ def shrink(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
     return status
 
 
+RCLONE_MIN = (1, 66)
+RCLONE_HINT = (
+    "install rclone >= 1.66: https://rclone.org/downloads/ "
+    "(Windows: winget search rclone)"
+)
+
+
+def _merge_excludes(*groups: list[str] | None) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group or []:
+            if item not in seen:
+                seen.add(item)
+                merged.append(item)
+    return merged
+
+
+def _has_files(path: Path) -> bool:
+    return any(item.is_file() for item in path.rglob("*"))
+
+
+def _probe_rclone(binary: str) -> tuple[str | None, tuple[int, int, int] | None, str | None]:
+    try:
+        result = subprocess.run([binary, "version"], capture_output=True, text=True)
+    except FileNotFoundError:
+        return None, None, f"rclone not found: {binary}"
+    except OSError as exc:
+        return None, None, f"cannot run rclone: {exc}"
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".strip()
+    match = re.search(r"rclone v(\d+)\.(\d+)(?:\.(\d+))?", output)
+    if match is None:
+        if result.returncode != 0:
+            return None, None, f"rclone version failed with exit code {result.returncode}"
+        return None, None, "cannot parse rclone version"
+    parsed = (int(match.group(1)), int(match.group(2)), int(match.group(3) or 0))
+    return f"{parsed[0]}.{parsed[1]}.{parsed[2]}", parsed, None
+
+
+def _check_rclone(binary: str, log: Logger) -> str | None:
+    version, parsed, error = _probe_rclone(binary)
+    if parsed is None:
+        log.error(error or "rclone unavailable")
+        log.error(RCLONE_HINT)
+        return None
+    if parsed[:2] < RCLONE_MIN:
+        log.error(f"rclone {version} is too old; need >= 1.66")
+        log.error(f"upgrade rclone: {RCLONE_HINT}")
+        return None
+    return version
+
+
+def run_rclone(cmd: list[str]) -> int:
+    try:
+        return subprocess.run(cmd).returncode
+    except FileNotFoundError:
+        print(f"pix: error: rclone not found: {cmd[0]}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"pix: error: cannot run rclone: {exc}", file=sys.stderr)
+        return 1
+
+
+def backup(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> int:
+    config = settings["backup"]
+    source = args.source
+    if not source.is_dir():
+        log.error(f"source is not a directory: {source}")
+        return 2
+    try:
+        max_delete = _require_int(
+            "max-delete",
+            args.max_delete if args.max_delete is not None else config["max_delete"],
+            -1,
+        )
+    except ConfigError as exc:
+        log.error(str(exc))
+        return 2
+
+    if not _has_files(source) and not (args.allow_empty and args.resync):
+        log.error("source is empty; use --allow-empty together with --resync to proceed")
+        return 2
+
+    binary = settings["rclone"]["binary"]
+    version = _check_rclone(binary, log)
+    if version is None:
+        return 1
+
+    excludes = _merge_excludes(config["exclude"], args.exclude)
+    cmd = [binary, "bisync", str(source), args.dest]
+    for pattern in excludes:
+        cmd += ["--exclude", pattern]
+    cmd += ["--max-delete", str(max_delete)]
+    if args.resync:
+        cmd.append("--resync")
+    if args.dry_run:
+        cmd.append("--dry-run")
+    cmd.append("--progress" if args.verbose else "--quiet")
+
+    log.info(f"bisync {source} <-> {args.dest} (rclone {version})")
+    log.detail(" ".join(cmd))
+    return run_rclone(cmd)
+
+
 def _not_implemented(_args: argparse.Namespace, _settings: dict[str, Any], log: Logger) -> int:
     log.error("subcommand not implemented yet; see docs/architecture.md")
     return 2
@@ -595,7 +700,7 @@ def main(argv: list[str] | None = None) -> int:
     log = Logger(verbose=bool(getattr(args, "verbose", False)), quiet=bool(getattr(args, "quiet", False)))
     handlers = {
         "shrink": shrink,
-        "backup": _not_implemented,
+        "backup": backup,
         "publish": _not_implemented,
         "doctor": _not_implemented,
     }

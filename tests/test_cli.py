@@ -279,3 +279,153 @@ def test_shrink_failure_cleans_tmp_file(tmp_path: Path):
     assert not (dest / "bad.avif").exists()
     assert list(dest.rglob("*.tmp.avif")) == []
     assert read_state(dest)["files"] == {}
+
+
+class FakeResult:
+    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def fake_rclone(monkeypatch, bisync_code: int = 0, version: str | Exception = "rclone v1.67.0\n"):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[1:] == ["version"]:
+            if isinstance(version, Exception):
+                raise version
+            return FakeResult(0, version)
+        return FakeResult(bisync_code)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    return calls
+
+
+def make_source(tmp_path: Path) -> Path:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "a.jpg").write_bytes(b"x")
+    return source
+
+
+def test_backup_builds_bisync_command(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[backup]\nexclude = ["cfg", "dup"]\nmax_delete = 9\n', encoding="utf-8"
+    )
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        [
+            "--config",
+            str(config),
+            "backup",
+            "-s",
+            str(source),
+            "-d",
+            "remote:photos",
+            "--exclude",
+            "cli",
+            "--exclude",
+            "dup",
+            "-v",
+        ]
+    ) == 0
+
+    assert calls[0] == ["rclone", "version"]
+    assert calls[1] == [
+        "rclone",
+        "bisync",
+        str(source),
+        "remote:photos",
+        "--exclude",
+        "cfg",
+        "--exclude",
+        "dup",
+        "--exclude",
+        "cli",
+        "--max-delete",
+        "9",
+        "--progress",
+    ]
+
+
+def test_backup_defaults_to_quiet_and_max_delete_ten(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(["backup", "-s", str(source), "-d", "remote:photos"]) == 0
+
+    assert calls[1][-3:] == ["--max-delete", "10", "--quiet"]
+
+
+def test_backup_empty_source_refuses(tmp_path: Path, monkeypatch, capsys):
+    source = tmp_path / "src"
+    source.mkdir()
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(["backup", "-s", str(source), "-d", "remote:photos"]) == 2
+
+    assert calls == []
+    assert "source is empty" in capsys.readouterr().err
+
+
+def test_backup_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
+    source = tmp_path / "src"
+    source.mkdir()
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        ["backup", "-s", str(source), "-d", "remote:photos", "--allow-empty"]
+    ) == 2
+    assert calls == []
+
+    assert cli.main(
+        [
+            "backup",
+            "-s",
+            str(source),
+            "-d",
+            "remote:photos",
+            "--allow-empty",
+            "--resync",
+        ]
+    ) == 0
+    assert "--resync" in calls[1]
+
+
+def test_backup_dry_run_and_passthrough_exit_code(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    calls = fake_rclone(monkeypatch, bisync_code=7)
+
+    assert cli.main(
+        ["backup", "-s", str(source), "-d", "remote:photos", "--dry-run", "--quiet"]
+    ) == 7
+
+    assert calls[1][-2:] == ["--dry-run", "--quiet"]
+
+
+def test_backup_rejects_old_or_missing_rclone(tmp_path: Path, monkeypatch, capsys):
+    source = make_source(tmp_path)
+
+    fake_rclone(monkeypatch, version="rclone v1.65.2\n")
+    assert cli.main(["backup", "-s", str(source), "-d", "remote:photos"]) == 1
+    assert "too old" in capsys.readouterr().err
+
+    fake_rclone(monkeypatch, version=FileNotFoundError())
+    assert cli.main(["backup", "-s", str(source), "-d", "remote:photos"]) == 1
+    assert "not found" in capsys.readouterr().err
+
+
+def test_backup_rejects_invalid_max_delete(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        ["backup", "-s", str(source), "-d", "remote:photos", "--max-delete", "-2"]
+    ) == 2
+    assert calls == []
+
