@@ -1,7 +1,7 @@
 [project]
 name = "pix-cli"
 version = "0.1.0"
-description = "Batch image shrink and sync CLI"
+description = "Batch AVIF shrink and image-host sync CLI"
 readme = "README.md"
 authors = [
     { name = "uzvg", email = "uzvg@qq.com" }
