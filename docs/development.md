@@ -157,3 +157,26 @@ pyvips/libvips 不可用。
 ## 10. CI
 
 GitHub Actions 在 Python 3.11 和 3.14 上运行 `uv sync --dev` 与 `uv run pytest`，见 `.github/workflows/ci.yml`。本地默认环境是 3.14，但代码不得使用 3.12+ 语法。
+
+## 11. 发布到 PyPI
+
+使用 Trusted Publishing，本地不需要保存 PyPI token，见 `.github/workflows/publish.yml`。
+
+首次发布前：
+
+1. 在 <https://pypi.org/manage/account/publishing/> 添加 pending publisher：
+   - PyPI Project Name：`pix-cli`
+   - Owner：`uzvg`
+   - Repository name：`pix`
+   - Workflow name：`publish.yml`
+   - Environment name：`pypi`
+2. 在 GitHub 仓库的 Settings → Environments 创建 `pypi` 环境（可加 required reviewers）。
+
+发布：
+
+```bash
+git tag -a v0.1.0 -m v0.1.0
+git push origin v0.1.0
+```
+
+tag 必须与 `pyproject.toml` 的 `version` 一致；同一个版本不能重复发布。
