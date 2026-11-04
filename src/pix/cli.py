@@ -476,6 +476,7 @@ def shrink(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
     }
     status = 0
     pyvips = None
+    encoded: set[str] = set()
 
     try:
         for src in sources:
@@ -542,6 +543,7 @@ def shrink(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
                 "out_size": out_stat.st_size,
                 "out_mtime_ns": out_stat.st_mtime_ns,
             }
+            encoded.add(rel)
             counters["converted"] += 1
             log.detail(f"encoded {rel}")
             if counters["converted"] % 200 == 0:
@@ -560,6 +562,13 @@ def shrink(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
             counters["protected"] += protected
             if failed or protected:
                 status = 1
+
+        if not params_match and status == 0 and not args.dry_run:
+            # Only keep entries written under the new parameters; stale entries
+            # would otherwise be skipped after min_size or include changes.
+            state["files"] = {
+                rel: entry for rel, entry in state["files"].items() if rel in encoded
+            }
     except KeyboardInterrupt:
         log.error("interrupted")
         status = 1
@@ -748,7 +757,7 @@ def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> 
     root = base_url.rstrip("/")
     manifest = {
         rel: f"{root}/{quote(rel, safe='/')}"
-        for rel in (path.relative_to(source).as_posix() for path in avifs)
+        for rel in (path.relative_to(source).as_posix() for path in _collect_avif(source))
     }
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
     return code

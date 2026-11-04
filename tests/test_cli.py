@@ -146,6 +146,21 @@ def test_shrink_reencodes_when_params_change(tmp_path: Path):
     assert read_state(dest)["params"] == "w=100;q=85;e=5"
 
 
+def test_shrink_params_change_drops_entries_skipped_by_min_size(tmp_path: Path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    make_png(source / "a.png")
+    assert run_shrink(source, dest, "-w", "100") == 0
+
+    assert run_shrink(source, dest, "-w", "200", "-m", "1M") == 0
+    assert read_state(dest)["files"] == {}
+
+    assert run_shrink(source, dest, "-w", "200") == 0
+    import pyvips
+
+    assert pyvips.Image.new_from_file(str(dest / "a.avif")).width == 200
+
+
 def test_shrink_reencodes_when_output_deleted(tmp_path: Path):
     source = tmp_path / "src"
     dest = tmp_path / "out"
