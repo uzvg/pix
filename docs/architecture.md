@@ -51,8 +51,8 @@ src/pix/
 ├── __init__.py     # 包版本
 ├── py.typed
 ├── cli.py          # 组合根：parser、main、子命令分派
-├── config.py       # 默认值、TOML 读取与校验、parse_size、config init
-├── default_config.toml  # config init 写入的模板（随包分发）
+├── config.py       # TOML 读取与校验、parse_size、config init
+├── default_config.toml  # 默认值唯一来源，也是 config init 的模板（随包分发）
 ├── logger.py       # stderr 日志
 ├── shrink.py       # shrink 子命令
 ├── rclone.py       # rclone 探测、版本检查与执行
@@ -150,7 +150,7 @@ pix config init [--force]
 - Linux/macOS：`$XDG_CONFIG_HOME/pix/config.toml`，未设置时为 `~/.config/pix/config.toml`。
 - Windows：`%APPDATA%\pix\config.toml`。
 
-文件不存在时使用内置默认值。
+文件不存在时使用内置默认值（即 `src/pix/default_config.toml`）。
 
 ```toml
 [shrink]

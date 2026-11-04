@@ -56,7 +56,7 @@ def test_config_priority_and_defaults(tmp_path: Path):
 
     assert settings["shrink"]["width"] == 1000
     assert settings["shrink"]["quality"] == 70
-    assert settings["shrink"]["effort"] == pix_config.DEFAULTS["shrink"]["effort"]
+    assert settings["shrink"]["effort"] == pix_config.load_defaults()["shrink"]["effort"]
     assert settings["publish"]["max_delete"] == 10
 
 
@@ -92,7 +92,7 @@ def test_config_init_writes_defaults(tmp_path: Path, capsys):
     assert cli.main(["--config", str(config), "config", "init"]) == 0
 
     assert capsys.readouterr().out.strip() == f"wrote {config}"
-    assert tomllib.loads(config.read_text(encoding="utf-8")) == pix_config.DEFAULTS
+    assert tomllib.loads(config.read_text(encoding="utf-8")) == pix_config.load_defaults()
     assert pix_config.load_settings(config)["shrink"]["width"] == 1920
 
 
@@ -112,7 +112,7 @@ def test_config_init_force_overwrites(tmp_path: Path, capsys):
 
     assert cli.main(["--config", str(config), "config", "init", "--force"]) == 0
 
-    assert tomllib.loads(config.read_text(encoding="utf-8")) == pix_config.DEFAULTS
+    assert tomllib.loads(config.read_text(encoding="utf-8")) == pix_config.load_defaults()
     assert capsys.readouterr().out.strip() == f"wrote {config}"
 
 

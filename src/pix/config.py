@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import os
 import re
 import sys
@@ -11,35 +10,24 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-DEFAULTS: dict[str, Any] = {
-    "shrink": {
-        "width": 1920,
-        "quality": 85,
-        "effort": 5,
-        "min_size": 0,
-        "include": ["jpg", "jpeg", "png", "webp"],
-    },
-    "backup": {
-        "exclude": [],
-        "max_delete": 10,
-    },
-    "publish": {
-        "base_url": "",
-        "urls": False,
-        "exclude": [],
-        "max_delete": 10,
-    },
-    "rclone": {
-        "binary": "rclone",
-    },
-}
-
 _SIZE_RE = re.compile(r"^(\d+)([KMG]?)$", re.IGNORECASE)
 _SIZE_UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}
 
 
 class ConfigError(Exception):
     """Invalid or unreadable configuration."""
+
+
+def load_defaults() -> dict[str, Any]:
+    """Read the packaged template, the single source of default values."""
+    path = Path(__file__).with_name("default_config.toml")
+    try:
+        with path.open("rb") as handle:
+            return tomllib.load(handle)
+    except OSError as exc:
+        raise ConfigError(f"{path}: {exc}") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: {exc}") from exc
 
 
 def parse_size(value: str | int) -> int:
@@ -97,7 +85,7 @@ def load_settings(explicit: Path | None = None) -> dict[str, Any]:
     if explicit is not None and not path.is_file():
         raise ConfigError(f"config file not found: {path}")
     overrides = load_config(path)
-    settings = copy.deepcopy(DEFAULTS)
+    settings = load_defaults()
     _deep_update(settings, overrides)
     validate_settings(settings)
     return settings
