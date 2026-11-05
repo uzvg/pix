@@ -6,7 +6,7 @@
 
 截至 2026-11-04：
 
-- 四个子命令 `shrink` / `backup` / `publish` / `doctor` 已实现，`uv run pytest` 通过。
+- 四个子命令 `shrink` / `mirror` / `publish` / `doctor` 已实现，`uv run pytest` 通过。
 - `pix config init` 可生成带注释的默认配置；`--force` 覆盖已有文件。
 - 真实 rclone 的本地目录端到端（首次 `--resync`、二次增量、双向删除）已验证；`pix shrink` 与 `vips thumbnail` 的 AVIF 字节一致性已验证。真实 R2 与 Windows 原生库仍待手工验证。
 - 文档已按新定位重写，并完成 2026-11-04 审计修复。
@@ -15,7 +15,7 @@
 ## M0. 文档重写（完成）
 
 - [x] 移除旧项目的全部残留内容。
-- [x] 定义 `shrink` / `backup` / `publish` / `doctor` 四个子命令。
+- [x] 定义 `shrink` / `mirror` / `publish` / `doctor` 四个子命令。
 - [x] 定义 `.pix/state.json` 增量状态。
 - [x] 定义 bisync 双向同步与 `--resync` 规则。
 - [x] 更新 README、AGENTS.md、pyproject 描述。
@@ -25,7 +25,7 @@
 按 2026-11-04 审计逐项修正规格与脚手架：
 
 - [x] `--prune` 空源保护与 `--allow-empty`。
-- [x] `backup` 明确为双向镜像，新增 `--max-delete`（默认 10%，rclone bisync 的删除百分比）。
+- [x] `mirror` 明确为双向镜像，新增 `--max-delete`（默认 10%，rclone bisync 的删除百分比）。
 - [x] 目标路径冲突检测（`a.jpg` / `a.jpeg` 等）。
 - [x] 状态每 200 个文件刷新，`finally` 落盘；`out_mtime_ns` 退出跳过条件。
 - [x] `publish` 源校验：必须是含 `.avif` 的目录。
@@ -36,13 +36,13 @@
 - [x] `min_size` 接受整数或尺寸字符串。
 - [x] 修改排除项后必须 `--resync`。
 - [x] 删除模板死代码；拆分规则改为按职责拆分。
-- [x] rclone 版本在 `backup` / `publish` 入口检查。
+- [x] rclone 版本在 `mirror` / `publish` 入口检查。
 - [x] `shrink` 单实例锁 `OUT/.pix/lock`。
 - [x] `base_url` 必须带 `http(s)://`。
 
 ## M1. CLI 骨架
 
-- [x] argparse 主 parser + `shrink` / `backup` / `publish` / `doctor` 子命令。
+- [x] argparse 主 parser + `shrink` / `mirror` / `publish` / `doctor` 子命令。
 - [x] 全局 `--config`、`--version`。
 - [x] 配置加载与三层合并，argparse 默认值使用哨兵。
 - [x] 日志级别：默认、`-v`、`--quiet`。
@@ -74,7 +74,7 @@
 - 改参数后全量重编码；改单个源文件只重编码该文件。
 - 中断或编码失败不会留下半截 AVIF。
 
-## M3. backup
+## M3. mirror
 
 - [x] rclone 路径解析与本地源目录校验；空源默认拒绝，`--allow-empty` 加 `--resync` 才放行。
 - [x] bisync 命令拼装：`--exclude`（合并去重）、`--max-delete`（默认 10%，百分比）、`--resync`、`--dry-run`、`-v` / `--quiet`。
@@ -93,7 +93,7 @@
 
 - [x] bisync 命令固定追加 `--exclude .pix/**`，配置排除项随后，命令行追加。
 - [x] `publish` 源必须是含至少一个 `.avif` 的目录；空源需 `--allow-empty` 加 `--resync`。
-- [x] `--max-delete` 默认 10%，与 `backup` 一致。
+- [x] `--max-delete` 默认 10%，与 `mirror` 一致。
 - [x] `--base-url` / `[publish].base_url` 合并，协议必须是 `http(s)://`。
 - [x] `--urls` / `--no-urls` 合并与 JSON 输出，路径段编码正确。
 - [x] 缺少 base_url 时退出 2，且在调用 rclone 前拒绝。
@@ -122,7 +122,7 @@
 
 ## Backlog（第一版不做）
 
-- 一键流水线 `pix run`（shrink → backup → publish）。
+- 一键流水线 `pix run`（shrink → mirror → publish）。
 - 自动 `--resync`。
 - 远端可达性探测。
 - 图片裁剪（crop）。
@@ -135,7 +135,7 @@
 | 风险 | 处理 |
 |---|---|
 | bisync 双向删除不可逆 | 默认 `--max-delete 10`（10% 删除比例）；显式 `--resync`；先 `--dry-run` |
-| 空目录/挂载失败被当成“删除全部” | `--prune` 空源拒绝；`backup` / `publish` 空源需 `--allow-empty` |
+| 空目录/挂载失败被当成“删除全部” | `--prune` 空源拒绝；`mirror` / `publish` 空源需 `--allow-empty` |
 | `a.jpg` 与 `a.jpeg` 争用同一输出 | 编码前冲突检测，退出 2 |
 | 修改排除项后未 resync 导致误删 | 文档与错误提示要求先 `--resync` |
 | `pyvips[binary]` 与系统 libvips 版本不一致导致 AVIF 差异 | 已在 8.18.7 验证字节一致；升级 libvips 后重跑抽样对比 |

@@ -7,7 +7,7 @@
 - [uv](https://docs.astral.sh/uv/)。
 - Python `>=3.11`。仓库的 `.python-version` 和本地虚拟环境是 3.14，但代码必须兼容 3.11，不能使用 3.12+ 语法。
 - 图像后端 `pyvips[binary]` 由依赖自动安装，不需要单独安装 libvips。
-- `backup` / `publish` 需要外部 `rclone >= 1.66`；单元测试不需要安装真实 rclone。
+- `mirror` / `publish` 需要外部 `rclone >= 1.66`；单元测试不需要安装真实 rclone。
 
 ## 2. 常用命令
 
@@ -55,16 +55,16 @@ editable 安装后修改源码立即生效。升级依赖后可用 `uv tool inst
 | 原子写入 | 编码失败时临时文件被清理 |
 | 并发锁 | 第二个 `shrink` 遇到 `OUT/.pix/lock` 时返回 1 |
 | `min_size` 类型 | 配置写整数 `0` 或字符串 `"500K"` 均可解析 |
-| `backup` 命令拼装 | `bisync`、`--exclude`、`--max-delete`、`--resync`、`--dry-run`、`-v` / `--quiet` |
-| `backup` / `publish` 空源 | 默认退出 2；`--allow-empty` 加 `--resync` 才放行 |
+| `mirror` 命令拼装 | `bisync`、`--exclude`、`--max-delete`、`--resync`、`--dry-run`、`-v` / `--quiet` |
+| `mirror` / `publish` 空源 | 默认退出 2；`--allow-empty` 加 `--resync` 才放行 |
 | `publish` 命令拼装 | 固定带 `--exclude .pix/**`，配置排除项随后，命令行追加 |
 | `publish` 无 AVIF | 源目录没有 `.avif` 时退出 2，不调用 rclone |
 | `publish --urls` | 输出排序后的 JSON；路径段正确编码 |
 | `--urls` / `--no-urls` | 配置 `urls = true` 时 `--no-urls` 能单次关闭 |
 | `--urls` 缺少 base_url | 退出 2，且不调用 rclone |
 | `base_url` 协议 | 非 `http(s)://` 时退出 2 |
-| 退出码透传 | mock 返回非零时 `backup` / `publish` 原样返回 |
-| rclone 缺失/过旧 | `backup` / `publish` 启动时检查版本，失败返回 1 |
+| 退出码透传 | mock 返回非零时 `mirror` / `publish` 原样返回 |
+| rclone 缺失/过旧 | `mirror` / `publish` 启动时检查版本，失败返回 1 |
 | 真实 shrink | 生成小 PNG，运行 `pix shrink`，断言输出存在且宽度正确 |
 
 mtime 测试用 `os.utime` 控制时间，避免依赖真实文件系统精度。状态测试直接读写 `.pix/state.json`，不要依赖真实 rclone。
@@ -111,7 +111,7 @@ vips thumbnail src 'out.avif[Q=85,strip,effort=5]' 1920 --size down --linear
 - `thumbnail(..., size="down", linear=True)` 的默认旋转行为与 CLI 一致。
 - libvips 8.18.7 没有 `avifsave` action；AVIF 通过 `heifsave`（`.avif` 后缀自动选择）保存。
 - `effort` 是有效参数。
-- `import pyvips` 延迟到 `shrink` / `doctor` 内部，保证 `backup` / `publish` 在图像后端缺失时仍可用。
+- `import pyvips` 延迟到 `shrink` / `doctor` 内部，保证 `mirror` / `publish` 在图像后端缺失时仍可用。
 
 复验方法：对同一张真实图片分别用上述两种方式生成 AVIF，比较文件大小和 MD5/内容哈希。
 
@@ -136,11 +136,11 @@ pyvips/libvips 不可用。
 
 ## 8. rclone 与 bisync
 
-- 需要 `rclone >= 1.66`。`backup` / `publish` 启动时解析 `rclone version` 并检查；`doctor` 保留同样的检查。
-- 首次运行 `pix backup` / `pix publish` 必须加 `--resync`，否则 rclone 会因缺少基线报错。
+- 需要 `rclone >= 1.66`。`mirror` / `publish` 启动时解析 `rclone version` 并检查；`doctor` 保留同样的检查。
+- 首次运行 `pix mirror` / `pix publish` 必须加 `--resync`，否则 rclone 会因缺少基线报错。
 - 修改 `--exclude` 或配置排除项后，必须重新带 `--resync` 运行，否则被排除的文件可能被当作删除传播。
 - `--max-delete` 默认 `10`，是 rclone bisync 的删除百分比（不是数量）；`0` 禁止删除，`-1` 不限制。超过比例时 rclone 拒绝执行，这是默认保护，不要静默改成 `-1`。
-- `backup` / `publish` 是双向镜像，不是单向备份，删除会双向传播。手动验证时先用 `--dry-run`，再在临时目录里测试。
+- `mirror` / `publish` 是双向镜像，不是单向备份，删除会双向传播。手动验证时先用 `--dry-run`，再在临时目录里测试。
 - 源目录为空时默认拒绝；确实要清空远端时才用 `--allow-empty`（`publish` 还需 `--resync`）。
 - bisync 基线在 `~/.cache/rclone/bisync/`，由 rclone 管理；排查问题时可以用 `rclone bisync --help` 查看当前版本的参数。
 - 单元测试只断言 argv，不访问网络，也不需要真实 remote。

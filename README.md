@@ -13,7 +13,7 @@
 | Command | Purpose |
 |---|---|
 | `pix shrink` | Recursively compress images to AVIF, re-encoding only changed files |
-| `pix backup` | Bidirectionally mirror an original photo directory to a cloud drive |
+| `pix mirror` | Bidirectionally mirror an original photo directory to a cloud drive |
 | `pix publish` | Bidirectionally mirror AVIF output to an image host; optionally emit public URLs |
 | `pix doctor` | Check Python, libvips, rclone and configuration |
 | `pix config init` | Write a commented default configuration file |
@@ -30,25 +30,25 @@
 photos/ ── shrink (pyvips) ──> out/*.avif + out/.pix/state.json
                                      │
                                      └── publish (rclone bisync) ──> r2:images
-photos/ ── backup (rclone bisync) ────────────────────────────────> onedrive:photos
+photos/ ── mirror (rclone bisync) ────────────────────────────────> onedrive:photos
 ```
 
 | Command | What actually runs | Who does the work |
 |---|---|---|
 | `shrink` | pyvips thumbnail + AVIF encode | pix |
-| `backup` | `rclone bisync SRC REMOTE` | pix composes arguments, rclone executes |
+| `mirror` | `rclone bisync SRC REMOTE` | pix composes arguments, rclone executes |
 | `publish` | `rclone bisync OUT REMOTE`, excluding `.pix/**` | pix + rclone |
 | `doctor` / `config init` | Dependency checks / config scaffold | pix |
 
-**Sync is rclone.** `backup` and `publish` only compose `rclone bisync` arguments; rclone handles authentication, transfers and conflict handling. Configure remotes with `rclone config` before using them. `pix` never reads or writes `rclone.conf`.
+**Sync is rclone.** `mirror` and `publish` only compose `rclone bisync` arguments; rclone handles authentication, transfers and conflict handling. Configure remotes with `rclone config` before using them. `pix` never reads or writes `rclone.conf`.
 
-`backup` / `publish` are **bidirectional mirrors**, not one-way backups. Deletions propagate in both directions.
+`mirror` / `publish` are **bidirectional mirrors**, not one-way copies. Deletions propagate in both directions.
 
 ## Requirements
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- rclone >= 1.66 for `backup` / `publish`
+- rclone >= 1.66 for `mirror` / `publish`
 - At least one remote already configured in rclone
 
 `pyvips[binary]` bundles libvips, so no separate vips installation is required.
@@ -68,7 +68,7 @@ Linux installs `~/.local/bin/pix`; Windows installs `%USERPROFILE%\.local\bin\pi
 
 ## Configure rclone
 
-Only needed for `backup` / `publish`:
+Only needed for `mirror` / `publish`:
 
 ```bash
 rclone config         # create a remote, for example onedrive or r2
@@ -101,12 +101,12 @@ Common keys:
 | | `effort` | `5` | libvips effort, 0–9 |
 | | `min_size` | `0` | Skip sources smaller than this; accepts `500K`, `1M`, `2G` |
 | | `include` | `jpg`, `jpeg`, `png`, `webp` | Extensions to scan, without dots |
-| `[backup]` | `exclude` | `[]` | rclone exclude globs; command-line values are appended |
+| `[mirror]` | `exclude` | `[]` | rclone exclude globs; command-line values are appended |
 | | `max_delete` | `10` | Delete limit as a percentage; `-1` disables, `0` forbids |
 | `[publish]` | `base_url` | `""` | Public URL prefix; must start with `http://` or `https://` |
 | | `urls` | `false` | Emit a JSON URL manifest |
-| | `exclude` | `[]` | Same as backup |
-| | `max_delete` | `10` | Same as backup |
+| | `exclude` | `[]` | Same as mirror |
+| | `max_delete` | `10` | Same as mirror |
 | `[rclone]` | `binary` | `rclone` | rclone executable name or path |
 
 Precedence is **command line > pix config > built-in defaults**. `--exclude` is appended to config excludes rather than replacing them. `-q` means quality; silence is `--quiet` (no short form).
@@ -128,11 +128,11 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 
    The first run encodes everything; later runs skip unchanged files. State lives in `OUT/.pix/state.json`. Changing `width`, `quality` or `effort` triggers a full re-encode. `--dry-run` only prints the plan.
 
-3. Back up originals:
+3. Mirror originals:
 
    ```bash
-   pix backup -s ~/Pictures -d onedrive:photos --dry-run
-   pix backup -s ~/Pictures -d onedrive:photos --resync
+   pix mirror -s ~/Pictures -d onedrive:photos --dry-run
+   pix mirror -s ~/Pictures -d onedrive:photos --resync
    ```
 
    `--resync` is required on the first run. Always preview with `--dry-run` first.
@@ -150,7 +150,7 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 
    ```bash
    pix shrink -s ~/Pictures -d ~/Pictures-avif
-   pix backup -s ~/Pictures -d onedrive:photos
+   pix mirror -s ~/Pictures -d onedrive:photos
    pix publish -s ~/Pictures-avif -d r2:images --urls
    ```
 
@@ -163,8 +163,8 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 | Preview compression | `pix shrink -s SRC -d OUT --dry-run` |
 | Re-encode everything | `pix shrink -s SRC -d OUT --force` |
 | Remove outputs whose source is gone | `pix shrink -s SRC -d OUT --prune` |
-| Preview a sync | `pix backup -s SRC -d REMOTE --dry-run` |
-| First run, or after changing excludes | `pix backup -s SRC -d REMOTE --resync` |
+| Preview a sync | `pix mirror -s SRC -d REMOTE --dry-run` |
+| First run, or after changing excludes | `pix mirror -s SRC -d REMOTE --resync` |
 | Emit a URL manifest | `pix publish -s OUT -d REMOTE --base-url https://img.example.com --urls` |
 | Diagnose the environment | `pix doctor` |
 | Generate a config file | `pix config init` |
@@ -176,7 +176,7 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 | Deletions on either side | Propagated in both directions; accidental deletion is irreversible | Preview with `--dry-run`; default `--max-delete 10` (percentage) |
 | First sync | rclone has no baseline and errors | Add `--resync` explicitly |
 | Excludes changed | The old baseline may treat excluded files as deletions | Run with `--resync` again after changing excludes |
-| Empty source | `backup` / `publish` refuse; `shrink --prune` also refuses | Use `--allow-empty` (plus `--resync` for sync) only when intentional |
+| Empty source | `mirror` / `publish` refuse; `shrink --prune` also refuses | Use `--allow-empty` (plus `--resync` for sync) only when intentional |
 | `a.jpg` and `a.jpeg` both exist | Both map to the same output | Detected before encoding; exits 2 |
 | Two concurrent shrinks | They would write the same state and outputs | `OUT/.pix/lock` blocks the second process |
 | State lost or corrupt | Warning, then a full rebuild | Only causes re-encoding; outputs stay valid |
@@ -186,7 +186,7 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 - Logs and progress go to stderr.
 - stdout carries `doctor` reports, `--dry-run` plans and `--urls` JSON.
 - Exit codes: `0` success, `1` runtime failure, `2` argument or configuration error.
-- `backup` / `publish` return rclone's exit code unchanged.
+- `mirror` / `publish` return rclone's exit code unchanged.
 
 URL manifest example:
 

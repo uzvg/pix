@@ -7,7 +7,7 @@
 `pix` 是独立的图床流水线 CLI：
 
 - 把本地图片目录增量压缩为 AVIF。
-- 把原始图片目录备份到 OneDrive 等 rclone 兼容云盘。
+- 把原始图片目录双向镜像到 OneDrive 等 rclone 兼容云盘。
 - 把压缩结果双向同步到 Cloudflare R2 等 rclone 兼容图床。
 
 `pix` 只处理用户显式传入的本地路径和 rclone 远端，不感知项目类型或版本控制状态。所有路径和远端都由命令行或用户级配置提供。
@@ -24,7 +24,7 @@
 第一版做：
 
 - `pix shrink`：递归扫描图片，按宽度等比缩放并输出 AVIF，带增量状态。
-- `pix backup`：把原始图片目录与 rclone 远端双向同步。
+- `pix mirror`：把原始图片目录与 rclone 远端双向同步。
 - `pix publish`：把压缩目录与图床远端双向同步，可选输出公开 URL 清单。
 - `pix doctor`：检查运行依赖、rclone bisync 能力和配置。
 - `pix config init`：把带注释的默认配置写到默认路径，供用户修改。
@@ -44,7 +44,7 @@
 
 - Python `>=3.11`。
 - 仅标准库 + `pyvips[binary]`。
-- 运行时依赖外部 `rclone >= 1.66`（bisync 稳定版），由 `backup` / `publish` 调用。
+- 运行时依赖外部 `rclone >= 1.66`（bisync 稳定版），由 `mirror` / `publish` 调用。
 
 ```text
 src/pix/
@@ -56,7 +56,7 @@ src/pix/
 ├── logger.py       # stderr 日志
 ├── shrink.py       # shrink 子命令
 ├── rclone.py       # rclone 探测、版本检查与执行
-├── sync.py         # backup / publish 子命令
+├── sync.py         # mirror / publish 子命令
 └── doctor.py       # doctor 子命令
 tests/
 └── test_cli.py
@@ -77,7 +77,7 @@ tests/
 | `config` | `parse_size(value: str \| int) -> int` | 尺寸字符串转字节 |
 | `config` | `init_config(args) -> int` | `config init` 子命令：写入默认配置 |
 | `shrink` | `shrink(args, settings, log) -> int` | `shrink` 子命令 |
-| `sync` | `backup(args, settings, log) -> int` | `backup` 子命令 |
+| `sync` | `mirror(args, settings, log) -> int` | `mirror` 子命令 |
 | `sync` | `publish(args, settings, log) -> int` | `publish` 子命令 |
 | `doctor` | `doctor(args, settings, log) -> int` | `doctor` 子命令 |
 | `rclone` | `run_rclone(cmd: list[str]) -> int` | 调用 rclone 并返回其退出码 |
@@ -95,13 +95,13 @@ pix.rclone ──> subprocess
 ## 3. CLI 契约
 
 ```bash
-pix [--config PATH] [--version] {shrink,backup,publish,doctor,config}
+pix [--config PATH] [--version] {shrink,mirror,publish,doctor,config}
 
 pix shrink  -s SRC -d OUT
             [-w 1920] [-q 85] [-e 5] [-m 0]
             [--force] [--prune] [--allow-empty] [--dry-run] [-v|--quiet]
 
-pix backup  -s SRC -d REMOTE
+pix mirror  -s SRC -d REMOTE
             [--exclude GLOB ...] [--max-delete PERCENT] [--allow-empty] [--resync]
             [--dry-run] [-v|--quiet]
 
@@ -120,15 +120,15 @@ pix config init [--force]
 - `--config` 属于主 parser，写在子命令之前。
 - `--version` 输出 `pix <version>` 后以 0 退出。
 - `-s` 为源，`-d` 为目标。
-- `shrink` 的 `-d` 是本地目录；`backup` / `publish` 的 `-d` 是 rclone 路径，可以是 remote，也可以是本地目录。
+- `shrink` 的 `-d` 是本地目录；`mirror` / `publish` 的 `-d` 是 rclone 路径，可以是 remote，也可以是本地目录。
 - `-q` 只表示 quality；安静模式使用 `--quiet`，不提供短选项。
 - `-m/--min-size` 表示“小于该大小的源文件跳过”，`0` 表示不限制；支持 `500K` / `1M` / `2G`，按 1024 进制。
 - `-v` 与 `--quiet` 互斥。
-- `--dry-run` 不产生本地写入；`backup` / `publish` 中原样传给 rclone。与 `shrink --prune` 同用时只列出待删除项。
+- `--dry-run` 不产生本地写入；`mirror` / `publish` 中原样传给 rclone。与 `shrink --prune` 同用时只列出待删除项。
 - `--exclude` 可重复。配置中的排除项在前，命令行排除项追加在后，保留顺序并去重。
-- `--max-delete` 只用于 `backup` / `publish`，按删除百分比限制（rclone bisync 语义，不是数量），默认 `10`（即 10%）；`0` 禁止删除，`-1` 不限制，最大 `100`。超过比例时 rclone 拒绝运行。
-- `--allow-empty` 只用于 `shrink --prune`、`backup` 和 `publish`：允许源为空时继续执行破坏性操作。默认拒绝；`backup` / `publish` 还必须同时带 `--resync`。
-- `--resync` 只用于 `backup` / `publish`，原样传给 rclone。
+- `--max-delete` 只用于 `mirror` / `publish`，按删除百分比限制（rclone bisync 语义，不是数量），默认 `10`（即 10%）；`0` 禁止删除，`-1` 不限制，最大 `100`。超过比例时 rclone 拒绝运行。
+- `--allow-empty` 只用于 `shrink --prune`、`mirror` 和 `publish`：允许源为空时继续执行破坏性操作。默认拒绝；`mirror` / `publish` 还必须同时带 `--resync`。
+- `--resync` 只用于 `mirror` / `publish`，原样传给 rclone。
 - `--force` 只用于 `shrink`。
 - `--prune` 只用于 `shrink`，默认关闭。
 - `--base-url` / `--urls` / `--no-urls` 只用于 `publish`；`--no-urls` 可临时关闭配置中的 `[publish].urls = true`。
@@ -160,7 +160,7 @@ effort   = 5
 min_size = 0
 include  = ["jpg", "jpeg", "png", "webp"]
 
-[backup]
+[mirror]
 exclude    = []
 max_delete = 10
 
@@ -266,9 +266,9 @@ binary = "rclone"
 - 删除失败记录错误，最后返回 1。
 - 默认关闭，避免误删。
 
-## 6. backup 行为
+## 6. mirror 行为
 
-`backup` 把原始图片目录与远端做 **rclone bisync 双向同步**。它是双向镜像，不是单向备份。
+`mirror` 把原始图片目录与远端做 **rclone bisync 双向同步**。它是双向镜像，不是单向备份。
 
 命令拼装：
 
@@ -287,7 +287,7 @@ cmd.append("--progress" if verbose else "--quiet")
 - 首次运行必须显式加 `--resync`。`pix` 不自动添加，避免两边都有内容时悄悄覆盖一侧。
 - 不加 `--resync` 且 bisync 基线不存在时，rclone 会报错，`pix` 原样返回其退出码。
 - `-v` 映射 `--progress`，默认映射 `--quiet`。
-- `--exclude` 按配置在前、命令行在后合并，逐条传给 rclone；`pix` 不内置任何备份排除规则。
+- `--exclude` 按配置在前、命令行在后合并，逐条传给 rclone；`pix` 不内置任何镜像排除规则。
 - **修改排除项后必须先 `--resync`**：rclone 要求过滤器变更后重建基线，否则被排除的文件可能被当作删除传播。先跑 `--dry-run`。
 - `--max-delete` 默认 `10`，是删除百分比；一次运行要删除的比例超过 10% 时 rclone 会拒绝。确认要大量删除时显式调高，或传 `-1` 取消限制。
 - 双向同步意味着删除会传播：本地删除会同步到远端，远端删除也会同步到本地。首次操作建议先 `--dry-run`。
@@ -298,11 +298,11 @@ cmd.append("--progress" if verbose else "--quiet")
 
 ## 7. publish 行为
 
-`publish` 把 shrink 输出目录与图床远端做 **rclone bisync 双向同步**，参数与 `backup` 相同，另加：
+`publish` 把 shrink 输出目录与图床远端做 **rclone bisync 双向同步**，参数与 `mirror` 相同，另加：
 
 - `-s` 必须是已存在的本地目录，且至少包含一个 `.avif`。源为空时默认退出 2；只有显式 `--allow-empty` 且带 `--resync` 时才允许。
 - 固定追加 `--exclude .pix/**`，防止状态文件被同步到图床。配置排除项随后，命令行排除项最后，去重。
-- `--max-delete` 与 `backup` 相同，默认 `10`，按删除百分比计。
+- `--max-delete` 与 `mirror` 相同，默认 `10`，按删除百分比计。
 - `--base-url` 优先取命令行，其次取 `[publish].base_url`。值必须以 `http://` 或 `https://` 开头，否则退出 2。
 - `--urls` / `--no-urls` 优先取命令行，其次取 `[publish].urls`，默认关闭；`--no-urls` 可临时关闭配置中的 `true`。
 - 开启 URL 清单但没有可用的 `base_url` 时，在调用 rclone 前以退出码 2 拒绝。
@@ -318,7 +318,7 @@ cmd.append("--progress" if verbose else "--quiet")
 - 生成清单时递归收集 OUT 下所有 `.avif`（大小写不敏感），路径段用 `urllib.parse.quote(..., safe="/")` 编码。
 - `base_url` 末尾的 `/` 在拼接时去掉。
 - `--dry-run` 不生成 URL 清单。
-- 修改排除项后必须先 `--resync`，规则同 `backup`。
+- 修改排除项后必须先 `--resync`，规则同 `mirror`。
 - 双向同步同样会传播删除，首次操作建议先 `--dry-run`。
 
 ## 8. doctor
@@ -337,7 +337,7 @@ config /home/uzvg/.config/pix/config.toml (ok)
 
 - 缺少 pyvips/libvips：打印安装提示（文案见 [development.md](development.md#7-缺少-libvips-时)），退出 1。
 - 缺少 rclone：提示官方下载地址或 `winget search rclone`，退出 1。
-- rclone 版本低于 1.66：提示升级，退出 1。`backup` / `publish` 启动时也执行同样的版本检查，不依赖用户先跑 `doctor`。
+- rclone 版本低于 1.66：提示升级，退出 1。`mirror` / `publish` 启动时也执行同样的版本检查，不依赖用户先跑 `doctor`。
 - 配置文件解析失败：指出文件和错误位置，退出 2。
 - 配置文件不存在：显示 `missing (using defaults)`，属于正常状态，退出 0。
 - 多个问题同时存在时，配置错误（2）优先于依赖缺失（1）。
@@ -349,7 +349,7 @@ config /home/uzvg/.config/pix/config.toml (ok)
 - `--quiet`：只输出错误。
 - `doctor` 报告输出到 stdout；`--dry-run` 的计划文件列表和 `--urls` 的 JSON 输出到 stdout。
 - 退出码：`0` 成功，`1` 运行失败，`2` 参数/配置错误。
-- 例外：`backup` / `publish` 直接返回 rclone 的退出码，不归一化；调用方按非零即失败处理。
+- 例外：`mirror` / `publish` 直接返回 rclone 的退出码，不归一化；调用方按非零即失败处理。
 - 不引入 colorama、rich、click；仅标准库 + pyvips。
 
 ## 10. 跨平台约定

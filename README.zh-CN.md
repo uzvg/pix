@@ -13,7 +13,7 @@
 | 命令 | 作用 |
 |---|---|
 | `pix shrink` | 递归压缩图片为 AVIF，只重新编码变化的文件 |
-| `pix backup` | 把原图目录与云盘做双向镜像 |
+| `pix mirror` | 把原图目录与云盘做双向镜像 |
 | `pix publish` | 把 AVIF 输出目录与图床做双向镜像，可选输出公开 URL |
 | `pix doctor` | 检查 Python、libvips、rclone 与配置 |
 | `pix config init` | 生成带注释的默认配置文件 |
@@ -30,25 +30,25 @@
 photos/ ── shrink (pyvips) ──> out/*.avif + out/.pix/state.json
                                      │
                                      └── publish (rclone bisync) ──> r2:images
-photos/ ── backup (rclone bisync) ────────────────────────────────> onedrive:photos
+photos/ ── mirror (rclone bisync) ────────────────────────────────> onedrive:photos
 ```
 
 | 命令 | 实际执行的内容 | 谁负责 |
 |---|---|---|
 | `shrink` | pyvips 缩放并编码 AVIF | pix |
-| `backup` | `rclone bisync SRC REMOTE` | pix 拼参数，rclone 执行 |
+| `mirror` | `rclone bisync SRC REMOTE` | pix 拼参数，rclone 执行 |
 | `publish` | `rclone bisync OUT REMOTE`，排除 `.pix/**` | pix + rclone |
 | `doctor` / `config init` | 依赖检查 / 配置脚手架 | pix |
 
-**同步由 rclone 执行。** `backup` / `publish` 只负责拼装 `rclone bisync` 参数；认证、传输和冲突处理都由 rclone 完成。使用前请先用 `rclone config` 配好 remote。`pix` 不读取也不写入 `rclone.conf`。
+**同步由 rclone 执行。** `mirror` / `publish` 只负责拼装 `rclone bisync` 参数；认证、传输和冲突处理都由 rclone 完成。使用前请先用 `rclone config` 配好 remote。`pix` 不读取也不写入 `rclone.conf`。
 
-`backup` / `publish` 是**双向镜像**，不是单向备份。删除会双向传播。
+`mirror` / `publish` 是**双向镜像**，不是单向备份。删除会双向传播。
 
 ## 前置条件
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- `backup` / `publish` 需要 rclone >= 1.66
+- `mirror` / `publish` 需要 rclone >= 1.66
 - 已在 rclone 中配置好至少一个 remote
 
 `pyvips[binary]` 自带 libvips，不需要单独安装 vips。
@@ -68,7 +68,7 @@ Linux 安装到 `~/.local/bin/pix`，Windows 为 `%USERPROFILE%\.local\bin\pix.e
 
 ## 配置 rclone
 
-仅 `backup` / `publish` 需要：
+仅 `mirror` / `publish` 需要：
 
 ```bash
 rclone config         # 新建 remote，例如 onedrive 或 r2
@@ -101,12 +101,12 @@ pix config init
 | | `effort` | `5` | libvips effort，0–9 |
 | | `min_size` | `0` | 小于该值的源文件跳过；支持 `500K`、`1M`、`2G` |
 | | `include` | `jpg`、`jpeg`、`png`、`webp` | 扫描扩展名，不带点 |
-| `[backup]` | `exclude` | `[]` | rclone 排除 glob；命令行项会追加 |
+| `[mirror]` | `exclude` | `[]` | rclone 排除 glob；命令行项会追加 |
 | | `max_delete` | `10` | 删除百分比上限；`-1` 不限制，`0` 禁止删除 |
 | `[publish]` | `base_url` | `""` | 公开 URL 前缀，必须以 `http://` 或 `https://` 开头 |
 | | `urls` | `false` | 是否输出 JSON URL 清单 |
-| | `exclude` | `[]` | 同 `backup` |
-| | `max_delete` | `10` | 同 `backup` |
+| | `exclude` | `[]` | 同 `mirror` |
+| | `max_delete` | `10` | 同 `mirror` |
 | `[rclone]` | `binary` | `rclone` | rclone 可执行文件名或路径 |
 
 优先级为**命令行 > pix 配置 > 内置默认**。`--exclude` 是追加而非覆盖配置项。`-q` 表示 quality，静默模式用 `--quiet`（无短选项）。
@@ -128,11 +128,11 @@ pix config init
 
    首次全量编码，之后跳过未变化的文件。状态保存在 `OUT/.pix/state.json`。修改 `width`、`quality` 或 `effort` 会触发全量重编码。`--dry-run` 只打印计划。
 
-3. 备份原图：
+3. 镜像原图：
 
    ```bash
-   pix backup -s ~/Pictures -d onedrive:photos --dry-run
-   pix backup -s ~/Pictures -d onedrive:photos --resync
+   pix mirror -s ~/Pictures -d onedrive:photos --dry-run
+   pix mirror -s ~/Pictures -d onedrive:photos --resync
    ```
 
    首次运行必须显式加 `--resync`。建议先跑 `--dry-run` 预览。
@@ -150,7 +150,7 @@ pix config init
 
    ```bash
    pix shrink -s ~/Pictures -d ~/Pictures-avif
-   pix backup -s ~/Pictures -d onedrive:photos
+   pix mirror -s ~/Pictures -d onedrive:photos
    pix publish -s ~/Pictures-avif -d r2:images --urls
    ```
 
@@ -163,8 +163,8 @@ pix config init
 | 预览压缩 | `pix shrink -s SRC -d OUT --dry-run` |
 | 强制全部重压 | `pix shrink -s SRC -d OUT --force` |
 | 删除源已消失的输出 | `pix shrink -s SRC -d OUT --prune` |
-| 预览同步 | `pix backup -s SRC -d REMOTE --dry-run` |
-| 首次运行或修改排除项后 | `pix backup -s SRC -d REMOTE --resync` |
+| 预览同步 | `pix mirror -s SRC -d REMOTE --dry-run` |
+| 首次运行或修改排除项后 | `pix mirror -s SRC -d REMOTE --resync` |
 | 输出 URL 清单 | `pix publish -s OUT -d REMOTE --base-url https://img.example.com --urls` |
 | 诊断环境 | `pix doctor` |
 | 生成配置文件 | `pix config init` |
@@ -176,7 +176,7 @@ pix config init
 | 任意一侧删除文件 | 删除双向传播，误删不可逆 | 先 `--dry-run`；默认 `--max-delete 10`（百分比） |
 | 首次同步 | rclone 没有基线，直接报错 | 显式加 `--resync` |
 | 修改排除项 | 旧基线可能把被排除的文件当成删除传播 | 修改后必须重新 `--resync` |
-| 源目录为空 | `backup` / `publish` 默认拒绝；`shrink --prune` 同样拒绝 | 仅在确认要清空时用 `--allow-empty`（同步还需 `--resync`） |
+| 源目录为空 | `mirror` / `publish` 默认拒绝；`shrink --prune` 同样拒绝 | 仅在确认要清空时用 `--allow-empty`（同步还需 `--resync`） |
 | `a.jpg` 与 `a.jpeg` 同时存在 | 映射到同一输出 | 编码前检测并以 2 退出 |
 | 同时运行两个 shrink | 会写同一份状态和输出 | `OUT/.pix/lock` 阻止第二个进程 |
 | 状态文件丢失或损坏 | 告警后全量重建 | 只会重新编码，不会产生错误结果 |
@@ -186,7 +186,7 @@ pix config init
 - 日志和进度输出到 stderr。
 - stdout 用于 `doctor` 报告、`--dry-run` 计划和 `--urls` JSON。
 - 退出码：`0` 成功，`1` 运行失败，`2` 参数或配置错误。
-- `backup` / `publish` 原样返回 rclone 的退出码。
+- `mirror` / `publish` 原样返回 rclone 的退出码。
 
 URL 清单示例：
 
