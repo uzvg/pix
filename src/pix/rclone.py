@@ -5,11 +5,14 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from .logger import Logger
 
 RCLONE_MIN = (1, 66)
+HEARTBEAT_SECONDS = 1.0
 RCLONE_HINT = (
     "install rclone >= 1.66: https://rclone.org/downloads/ "
     "(Windows: winget search rclone)"
@@ -61,7 +64,23 @@ def check_rclone(binary: str, log: Logger) -> str | None:
     return version
 
 
-def run_rclone(cmd: list[str]) -> int:
+def run_rclone(cmd: list[str], log: Logger | None = None) -> int:
+    stop = threading.Event()
+    started = time.monotonic()
+    thread: threading.Thread | None = None
+    if (
+        log is not None
+        and not log.quiet
+        and not log.verbose
+        and sys.stderr.isatty()
+    ):
+        def beat() -> None:
+            while not stop.wait(HEARTBEAT_SECONDS):
+                elapsed = int(time.monotonic() - started)
+                log.progress(f"rclone still running ({elapsed}s)")
+
+        thread = threading.Thread(target=beat, daemon=True)
+        thread.start()
     try:
         return subprocess.run(cmd).returncode
     except FileNotFoundError:
@@ -70,3 +89,9 @@ def run_rclone(cmd: list[str]) -> int:
     except OSError as exc:
         print(f"pix: error: cannot run rclone: {exc}", file=sys.stderr)
         return 1
+    finally:
+        stop.set()
+        if thread is not None:
+            thread.join()
+        if log is not None:
+            log.end_progress()

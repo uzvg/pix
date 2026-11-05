@@ -35,6 +35,9 @@ class Logger:
         self._end_progress()
         print(f"pix: error: {message}", file=sys.stderr)
 
+    def end_progress(self) -> None:
+        self._end_progress()
+
     def progress(self, message: str) -> None:
         if self.quiet:
             return

@@ -287,6 +287,7 @@ cmd.append("--progress" if verbose else "--quiet")
 - 首次运行必须显式加 `--resync`。`pix` 不自动添加，避免两边都有内容时悄悄覆盖一侧。
 - 不加 `--resync` 且 bisync 基线不存在时，rclone 会报错，`pix` 原样返回其退出码。
 - `-v` 映射 `--progress`，默认映射 `--quiet`。
+- 默认（非 `-v`、非 `--quiet`）且 stderr 是终端时，bisync 运行期间每秒原地刷新一次 `rclone still running (<秒>s)` 心跳，避免长时间静默被误认为卡死；重定向时、`-v` 下（rclone 自带进度）和 `--quiet` 下均不输出心跳。
 - `--exclude` 按配置在前、命令行在后合并，逐条传给 rclone；`pix` 不内置任何镜像排除规则。
 - **修改排除项后必须先 `--resync`**：rclone 要求过滤器变更后重建基线，否则被排除的文件可能被当作删除传播。先跑 `--dry-run`。
 - `--max-delete` 默认 `10`，是删除百分比；一次运行要删除的比例超过 10% 时 rclone 会拒绝。确认要大量删除时显式调高，或传 `-1` 取消限制。

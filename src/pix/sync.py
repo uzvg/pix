@@ -57,7 +57,7 @@ def mirror(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
 
     log.info(f"bisync {source} <-> {args.dest} (rclone {version})")
     log.detail(" ".join(cmd))
-    return run_rclone(cmd)
+    return run_rclone(cmd, log)
 
 
 def _collect_avif(source: Path) -> list[Path]:
@@ -124,7 +124,7 @@ def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> 
 
     log.info(f"bisync {source} <-> {args.dest} (rclone {version})")
     log.detail(" ".join(cmd))
-    code = run_rclone(cmd)
+    code = run_rclone(cmd, log)
     if code != 0 or args.dry_run or not urls:
         return code
 

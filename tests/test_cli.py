@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import time
 import tomllib
 from pathlib import Path
 
@@ -492,6 +493,53 @@ def test_mirror_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
         ]
     ) == 0
     assert "--resync" in calls[1]
+
+
+def _slow_rclone(monkeypatch):
+    def slow_run(cmd, **kwargs):
+        if cmd[1:] == ["version"]:
+            return FakeResult(0, "rclone v1.67.0\n")
+        time.sleep(0.05)
+        return FakeResult(0)
+
+    monkeypatch.setattr(rclone.subprocess, "run", slow_run)
+    monkeypatch.setattr(rclone, "HEARTBEAT_SECONDS", 0.01)
+
+
+def _fake_tty(monkeypatch):
+    class FakeStderr(io.StringIO):
+        def isatty(self):
+            return True
+
+    stream = FakeStderr()
+    monkeypatch.setattr("pix.logger.sys.stderr", stream)
+    return stream
+
+
+def test_mirror_prints_heartbeat_on_tty(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    _slow_rclone(monkeypatch)
+    stream = _fake_tty(monkeypatch)
+
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 0
+    assert "rclone still running" in stream.getvalue()
+
+
+def test_mirror_heartbeat_is_off_when_stderr_is_not_a_tty(tmp_path: Path, monkeypatch, capsys):
+    source = make_source(tmp_path)
+    _slow_rclone(monkeypatch)
+
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 0
+    assert "rclone still running" not in capsys.readouterr().err
+
+
+def test_mirror_quiet_suppresses_heartbeat(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    _slow_rclone(monkeypatch)
+    stream = _fake_tty(monkeypatch)
+
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos", "--quiet"]) == 0
+    assert "rclone still running" not in stream.getvalue()
 
 
 def test_mirror_dry_run_and_passthrough_exit_code(tmp_path: Path, monkeypatch):
