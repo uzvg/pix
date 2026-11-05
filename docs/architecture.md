@@ -36,7 +36,6 @@
 - 一键流水线 `pix run`。
 - 图片裁剪（crop）。
 - 并发压缩（`--jobs` / `ThreadPoolExecutor`）。
-- 自动 `--resync`。
 - 远端可达性探测。
 - 彩色/富文本日志。
 
@@ -81,6 +80,8 @@ tests/
 | `sync` | `publish(args, settings, log) -> int` | `publish` 子命令 |
 | `doctor` | `doctor(args, settings, log) -> int` | `doctor` 子命令 |
 | `rclone` | `run_rclone(cmd: list[str]) -> int` | 调用 rclone 并返回其退出码 |
+| `rclone` | `ensure_dest(binary, dest, log) -> bool` | 幂等创建目标目录，返回是否成功 |
+| `rclone` | `dest_is_empty(binary, dest, excludes, log) -> bool \| None` | 列出目标一层并判断是否为空；失败返回 `None` |
 
 依赖方向：
 
@@ -124,11 +125,12 @@ pix config init [--force]
 - `-q` 只表示 quality；安静模式使用 `--quiet`，不提供短选项。
 - `-m/--min-size` 表示“小于该大小的源文件跳过”，`0` 表示不限制；支持 `500K` / `1M` / `2G`，按 1024 进制。
 - `-v` 与 `--quiet` 互斥。
-- `--dry-run` 不产生本地写入；`mirror` / `publish` 中原样传给 rclone。与 `shrink --prune` 同用时只列出待删除项。
+- `--dry-run` 不编码、不写状态；`mirror` / `publish` 不传输、不删除文件（首次同步仍可能创建一个空目标目录）。与 `shrink --prune` 同用时只列出待删除项。
 - `--exclude` 可重复。配置中的排除项在前，命令行排除项追加在后，保留顺序并去重。
 - `--max-delete` 只用于 `mirror` / `publish`，按删除百分比限制（rclone bisync 语义，不是数量），默认 `10`（即 10%）；`0` 禁止删除，`-1` 不限制，最大 `100`。超过比例时 rclone 拒绝运行。
 - `--allow-empty` 只用于 `shrink --prune`、`mirror` 和 `publish`：允许源为空时继续执行破坏性操作。默认拒绝；`mirror` / `publish` 还必须同时带 `--resync`。
-- `--resync` 只用于 `mirror` / `publish`，原样传给 rclone。
+- `--resync` 只用于 `mirror` / `publish`：强制重建 bisync 基线。首次同步不要求显式传入；目标为空时由 `pix` 自动初始化。目标非空时仍原样传给 rclone，由用户显式确认。
+- `mirror` / `publish` 调用 bisync 前始终执行 `rclone mkdir DEST`（幂等），目标缺失时自动创建；用户不需要手动运行 rclone。
 - `--force` 只用于 `shrink`。
 - `--prune` 只用于 `shrink`，默认关闭。
 - `--base-url` / `--urls` / `--no-urls` 只用于 `publish`；`--no-urls` 可临时关闭配置中的 `[publish].urls = true`。
@@ -270,9 +272,16 @@ binary = "rclone"
 
 `mirror` 把原始图片目录与远端做 **rclone bisync 双向同步**。它是双向镜像，不是单向备份。
 
-命令拼装：
+目标预检与命令拼装：
 
 ```python
+# 幂等；目标存在时不改变内容
+run([rclone, "mkdir", dest])
+
+# 只列一层，并应用与 bisync 相同的排除项
+entries = json.loads(run([rclone, "lsjson", dest, "--max-depth", "1", *exclude_args]))
+resync = args.resync or not entries
+
 cmd = [rclone, "bisync", str(source), dest]
 for pattern in excludes:
     cmd += ["--exclude", pattern]
@@ -284,8 +293,13 @@ if dry_run:
 cmd.append("--progress" if verbose else "--quiet")
 ```
 
-- 首次运行必须显式加 `--resync`。`pix` 不自动添加，避免两边都有内容时悄悄覆盖一侧。
-- 不加 `--resync` 且 bisync 基线不存在时，rclone 会报错，`pix` 原样返回其退出码。
+- 目标预检失败（`rclone mkdir` 或 `rclone lsjson` 非零、JSON 无法解析）返回 1，不调用 bisync。
+- 目标在应用排除项后没有任何条目时，自动加 `--resync` 初始化基线：此时远端没有可覆盖的内容，自动决策是安全的。
+- 首次同步不再要求显式 `--resync`；目标为空或不存在时直接成功。
+- 目标已有内容但没有基线时，不自动 resync。bisync 会失败，`pix` 原样返回其退出码，并在退出码为 7 时提示用户显式加 `--resync`。
+- `--resync` 仍然有效，用于目标非空时强制重建基线（恢复、修改排除项后）。
+- `--dry-run` 仍会创建缺失的目标目录并执行判空，否则首次同步无法预览；它不传输、不删除任何文件，只可能留下一个空目录。
+- 判空只列目标一层并应用与 bisync 相同的排除项，避免全量递归扫描。
 - `-v` 映射 `--progress`，默认映射 `--quiet`。
 - 默认（非 `-v`、非 `--quiet`）且 stderr 是终端时，bisync 运行期间每秒原地刷新一次 `rclone still running (<秒>s)` 心跳，避免长时间静默被误认为卡死；重定向时、`-v` 下（rclone 自带进度）和 `--quiet` 下均不输出心跳。
 - `--exclude` 按配置在前、命令行在后合并，逐条传给 rclone；`pix` 不内置任何镜像排除规则。
@@ -302,6 +316,7 @@ cmd.append("--progress" if verbose else "--quiet")
 `publish` 把 shrink 输出目录与图床远端做 **rclone bisync 双向同步**，参数与 `mirror` 相同，另加：
 
 - `-s` 必须是已存在的本地目录，且至少包含一个 `.avif`。源为空时默认退出 2；只有显式 `--allow-empty` 且带 `--resync` 时才允许。
+- 目标预检与 `mirror` 相同；判空和 bisync 都带上同样的排除项。
 - 固定追加 `--exclude .pix/**`，防止状态文件被同步到图床。配置排除项随后，命令行排除项最后，去重。
 - `--max-delete` 与 `mirror` 相同，默认 `10`，按删除百分比计。
 - `--base-url` 优先取命令行，其次取 `[publish].base_url`。值必须以 `http://` 或 `https://` 开头，否则退出 2。
@@ -350,7 +365,7 @@ config /home/uzvg/.config/pix/config.toml (ok)
 - `--quiet`：只输出错误。
 - `doctor` 报告输出到 stdout；`--dry-run` 的计划文件列表和 `--urls` 的 JSON 输出到 stdout。
 - 退出码：`0` 成功，`1` 运行失败，`2` 参数/配置错误。
-- 例外：`mirror` / `publish` 直接返回 rclone 的退出码，不归一化；调用方按非零即失败处理。
+- 例外：`mirror` / `publish` 的 bisync 命令直接返回 rclone 的退出码，不归一化；调用方按非零即失败处理。目标预检（`mkdir` / `lsjson`）失败返回 1。
 - 不引入 colorama、rich、click；仅标准库 + pyvips。
 
 ## 10. 跨平台约定

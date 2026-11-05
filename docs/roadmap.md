@@ -76,6 +76,7 @@
 
 ## M3. mirror
 
+- [ ] 目标预检：自动 `rclone mkdir`，目标为空时自动 resync（D30）。
 - [x] rclone 路径解析与本地源目录校验；空源默认拒绝，`--allow-empty` 加 `--resync` 才放行。
 - [x] bisync 命令拼装：`--exclude`（合并去重）、`--max-delete`（默认 10%，百分比）、`--resync`、`--dry-run`、`-v` / `--quiet`。
 - [x] mock `subprocess.run`，断言 argv 和退出码透传。
@@ -86,11 +87,12 @@
 验收：
 
 - 测试不需要安装真实 rclone。
-- 端到端验证：首次带 `--resync` 成功，第二次不带 resync 成功且不重复传输。
+- 端到端验证：首次同步自动创建目标并初始化基线，第二次增量成功且不重复传输。
 - 双向删除传播有记录（在临时目录中验证）。
 
 ## M4. publish
 
+- [ ] 目标预检与 `mirror` 共用，判空带上 `.pix/**`。
 - [x] bisync 命令固定追加 `--exclude .pix/**`，配置排除项随后，命令行追加。
 - [x] `publish` 源必须是含至少一个 `.avif` 的目录；空源需 `--allow-empty` 加 `--resync`。
 - [x] `--max-delete` 默认 10%，与 `mirror` 一致。
@@ -123,7 +125,7 @@
 ## Backlog（第一版不做）
 
 - 一键流水线 `pix run`（shrink → mirror → publish）。
-- 自动 `--resync`。
+- 无条件自动 `--resync`（目标非空时仍需显式确认）。
 - 远端可达性探测。
 - 图片裁剪（crop）。
 - 并发压缩（`--jobs` / `ThreadPoolExecutor`）。
@@ -134,7 +136,7 @@
 
 | 风险 | 处理 |
 |---|---|
-| bisync 双向删除不可逆 | 默认 `--max-delete 10`（10% 删除比例）；显式 `--resync`；先 `--dry-run` |
+| bisync 双向删除不可逆 | 默认 `--max-delete 10`（10% 删除比例）；目标为空时自动初始化，非空时显式 `--resync`；先 `--dry-run` |
 | 空目录/挂载失败被当成“删除全部” | `--prune` 空源拒绝；`mirror` / `publish` 空源需 `--allow-empty` |
 | `a.jpg` 与 `a.jpeg` 争用同一输出 | 编码前冲突检测，退出 2 |
 | 修改排除项后未 resync 导致误删 | 文档与错误提示要求先 `--resync` |

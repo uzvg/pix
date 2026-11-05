@@ -132,10 +132,10 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 
    ```bash
    pix mirror -s ~/Pictures -d onedrive:photos --dry-run
-   pix mirror -s ~/Pictures -d onedrive:photos --resync
+   pix mirror -s ~/Pictures -d onedrive:photos
    ```
 
-   `--resync` is required on the first run. Always preview with `--dry-run` first.
+   The destination is created automatically. An empty destination initializes its own baseline, so no `--resync` is needed on the first run. Use `--resync` only to rebuild the baseline when the destination already has content, or after changing excludes. Preview with `--dry-run` first.
 
 4. Publish the AVIF output:
 
@@ -164,7 +164,8 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 | Re-encode everything | `pix shrink -s SRC -d OUT --force` |
 | Remove outputs whose source is gone | `pix shrink -s SRC -d OUT --prune` |
 | Preview a sync | `pix mirror -s SRC -d REMOTE --dry-run` |
-| First run, or after changing excludes | `pix mirror -s SRC -d REMOTE --resync` |
+| First sync (new or empty destination) | `pix mirror -s SRC -d REMOTE` |
+| Rebuild the baseline (non-empty destination, or after changing excludes) | `pix mirror -s SRC -d REMOTE --resync` |
 | Emit a URL manifest | `pix publish -s OUT -d REMOTE --base-url https://img.example.com --urls` |
 | Diagnose the environment | `pix doctor` |
 | Generate a config file | `pix config init` |
@@ -174,7 +175,8 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 | Situation | What happens | Protection |
 |---|---|---|
 | Deletions on either side | Propagated in both directions; accidental deletion is irreversible | Preview with `--dry-run`; default `--max-delete 10` (percentage) |
-| First sync | rclone has no baseline and errors | Add `--resync` explicitly |
+| First sync (destination empty) | `pix` creates the destination and initializes the baseline | Preview with `--dry-run`; no manual rclone needed |
+| Destination has content but no baseline | `pix` does not auto-resync; bisync fails instead of overwriting | Confirm which side is authoritative, then add `--resync` |
 | Excludes changed | The old baseline may treat excluded files as deletions | Run with `--resync` again after changing excludes |
 | Empty source | `mirror` / `publish` refuse; `shrink --prune` also refuses | Use `--allow-empty` (plus `--resync` for sync) only when intentional |
 | `a.jpg` and `a.jpeg` both exist | Both map to the same output | Detected before encoding; exits 2 |
@@ -186,7 +188,7 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 - Logs and progress go to stderr.
 - stdout carries `doctor` reports, `--dry-run` plans and `--urls` JSON.
 - Exit codes: `0` success, `1` runtime failure, `2` argument or configuration error.
-- `mirror` / `publish` return rclone's exit code unchanged.
+- `mirror` / `publish` return rclone's bisync exit code unchanged; destination preflight failures return 1.
 
 URL manifest example:
 
@@ -202,7 +204,7 @@ URL manifest example:
 |---|---|
 | `pyvips/libvips unavailable` | Reinstall to bring libvips: `uv tool install --force --editable /path/to/pix`; or install libvips manually (Linux: `apt install libvips42`, Windows: libvips release zip on `PATH`) |
 | rclone is older than 1.66 | Upgrade rclone |
-| bisync reports a missing baseline | Add `--resync` on the first run |
+| bisync reports a missing baseline | The destination is non-empty. Confirm local should win, then add `--resync`; an empty destination initializes automatically. |
 | `OUT/.pix/lock` already exists | Check for another `shrink`, then remove a stale lock |
 | Configuration fails to parse | Run `pix doctor` to locate the file; fix the TOML or remove the file to fall back to defaults |
 | `publish` says the source has no `.avif` | Run `pix shrink` first |

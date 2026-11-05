@@ -32,7 +32,7 @@ uv build
 - 不通过 shell 调用 `vips` 或 `rclone`。
 - `-q` 是 quality，`--quiet` 是静默。
 - 退出码 0/1/2，日志走 stderr；`mirror` / `publish` 透传 rclone 退出码。
-- `mirror` / `publish` 使用 `rclone bisync`；首次运行必须显式 `--resync`，不要自动加。它们是双向镜像，不是单向备份。
+- `mirror` / `publish` 使用 `rclone bisync`；调用前先 `rclone mkdir` 目标并用 `rclone lsjson --max-depth 1` 判空。目标为空时自动加 `--resync`，目标非空时必须显式 `--resync`。用户不需要手动运行 rclone。它们是双向镜像，不是单向备份。
 - `--max-delete` 默认 10（删除百分比，rclone bisync 语义）；`mirror` / `publish` 源为空时默认拒绝，`--allow-empty` 加 `--resync` 才放行。
 - 修改排除项后必须提示用户先 `--resync`；`--exclude` 是配置在前、命令行追加并去重。
 - 增量状态固定在 `OUT/.pix/state.json`，每 200 个成功文件刷新并在 `finally` 落盘；`publish` 必须排除 `.pix/**`。

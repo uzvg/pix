@@ -132,10 +132,10 @@ pix config init
 
    ```bash
    pix mirror -s ~/Pictures -d onedrive:photos --dry-run
-   pix mirror -s ~/Pictures -d onedrive:photos --resync
+   pix mirror -s ~/Pictures -d onedrive:photos
    ```
 
-   首次运行必须显式加 `--resync`。建议先跑 `--dry-run` 预览。
+   目标目录会自动创建。目标为空时会自动初始化基线，首次运行不需要 `--resync`；只有目标已有内容、需要重建基线，或修改排除项后才需要显式加 `--resync`。建议先跑 `--dry-run` 预览。
 
 4. 发布 AVIF 输出：
 
@@ -164,7 +164,8 @@ pix config init
 | 强制全部重压 | `pix shrink -s SRC -d OUT --force` |
 | 删除源已消失的输出 | `pix shrink -s SRC -d OUT --prune` |
 | 预览同步 | `pix mirror -s SRC -d REMOTE --dry-run` |
-| 首次运行或修改排除项后 | `pix mirror -s SRC -d REMOTE --resync` |
+| 首次同步（目标不存在或为空） | `pix mirror -s SRC -d REMOTE` |
+| 重建基线（目标非空，或修改排除项后） | `pix mirror -s SRC -d REMOTE --resync` |
 | 输出 URL 清单 | `pix publish -s OUT -d REMOTE --base-url https://img.example.com --urls` |
 | 诊断环境 | `pix doctor` |
 | 生成配置文件 | `pix config init` |
@@ -174,7 +175,8 @@ pix config init
 | 情况 | 会发生什么 | 如何防护 |
 |---|---|---|
 | 任意一侧删除文件 | 删除双向传播，误删不可逆 | 先 `--dry-run`；默认 `--max-delete 10`（百分比） |
-| 首次同步 | rclone 没有基线，直接报错 | 显式加 `--resync` |
+| 首次同步（目标为空） | `pix` 自动创建目标并初始化基线 | 先 `--dry-run` 预览；不需要手动运行 rclone |
+| 目标已有内容但没有基线 | `pix` 不自动 resync，bisync 失败而不是覆盖 | 确认以哪边为准后显式加 `--resync` |
 | 修改排除项 | 旧基线可能把被排除的文件当成删除传播 | 修改后必须重新 `--resync` |
 | 源目录为空 | `mirror` / `publish` 默认拒绝；`shrink --prune` 同样拒绝 | 仅在确认要清空时用 `--allow-empty`（同步还需 `--resync`） |
 | `a.jpg` 与 `a.jpeg` 同时存在 | 映射到同一输出 | 编码前检测并以 2 退出 |
@@ -186,7 +188,7 @@ pix config init
 - 日志和进度输出到 stderr。
 - stdout 用于 `doctor` 报告、`--dry-run` 计划和 `--urls` JSON。
 - 退出码：`0` 成功，`1` 运行失败，`2` 参数或配置错误。
-- `mirror` / `publish` 原样返回 rclone 的退出码。
+- `mirror` / `publish` 原样返回 rclone bisync 的退出码；目标预检失败返回 1。
 
 URL 清单示例：
 
@@ -202,7 +204,7 @@ URL 清单示例：
 |---|---|
 | 提示 `pyvips/libvips unavailable` | 重装以带入 libvips：`uv tool install --force --editable /path/to/pix`；或手动安装 libvips（Linux：`apt install libvips42`；Windows：下载 libvips release 压缩包并把 `bin` 加入 PATH） |
 | rclone 版本低于 1.66 | 升级 rclone |
-| bisync 报缺少基线 | 首次运行加 `--resync` |
+| bisync 报缺少基线 | 目标是空的会自动初始化；目标非空时确认本地为准后加 `--resync` |
 | `OUT/.pix/lock` 已存在 | 确认没有其他 `shrink` 在运行，再删除陈旧锁 |
 | 配置解析失败 | 运行 `pix doctor` 定位文件；修复 TOML，或删除配置改用默认值 |
 | `publish` 提示源目录没有 `.avif` | 先运行 `pix shrink` |

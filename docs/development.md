@@ -56,6 +56,9 @@ editable 安装后修改源码立即生效。升级依赖后可用 `uv tool inst
 | 并发锁 | 第二个 `shrink` 遇到 `OUT/.pix/lock` 时返回 1 |
 | `min_size` 类型 | 配置写整数 `0` 或字符串 `"500K"` 均可解析 |
 | `mirror` 命令拼装 | `bisync`、`--exclude`、`--max-delete`、`--resync`、`--dry-run`、`-v` / `--quiet` |
+| 目标预检 | 首次同步自动 `rclone mkdir`；目标为空时自动 `--resync`；目标非空不自动 |
+| 目标预检失败 | `mkdir` / `lsjson` 失败返回 1，不调用 bisync |
+| `--dry-run` 首次同步 | 仍创建空目标并判空，但不传输、不删除 |
 | `mirror` / `publish` 空源 | 默认退出 2；`--allow-empty` 加 `--resync` 才放行 |
 | `publish` 命令拼装 | 固定带 `--exclude .pix/**`，配置排除项随后，命令行追加 |
 | `publish` 无 AVIF | 源目录没有 `.avif` 时退出 2，不调用 rclone |
@@ -137,7 +140,7 @@ pyvips/libvips 不可用。
 ## 8. rclone 与 bisync
 
 - 需要 `rclone >= 1.66`。`mirror` / `publish` 启动时解析 `rclone version` 并检查；`doctor` 保留同样的检查。
-- 首次运行 `pix mirror` / `pix publish` 必须加 `--resync`，否则 rclone 会因缺少基线报错。
+- 首次运行 `pix mirror` / `pix publish` 会自动创建目标；目标为空时自动初始化基线，不需要 `--resync`。目标非空且没有基线时，rclone 会报错，此时显式加 `--resync` 以本地为准重建。
 - 修改 `--exclude` 或配置排除项后，必须重新带 `--resync` 运行，否则被排除的文件可能被当作删除传播。
 - `--max-delete` 默认 `10`，是 rclone bisync 的删除百分比（不是数量）；`0` 禁止删除，`-1` 不限制。超过比例时 rclone 拒绝执行，这是默认保护，不要静默改成 `-1`。
 - `mirror` / `publish` 是双向镜像，不是单向备份，删除会双向传播。手动验证时先用 `--dry-run`，再在临时目录里测试。
