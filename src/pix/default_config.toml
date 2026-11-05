@@ -13,7 +13,7 @@ min_size = 0
 # Extensions to scan, written without dots.
 include = ["jpg", "jpeg", "png", "webp"]
 
-[backup]
+[mirror]
 # rclone exclude globs; command-line --exclude is appended after these.
 exclude = []
 # Maximum percent of files rclone may delete (-1 disables, 0 forbids).

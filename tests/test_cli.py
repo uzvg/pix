@@ -407,11 +407,11 @@ def make_source(tmp_path: Path) -> Path:
     return source
 
 
-def test_backup_builds_bisync_command(tmp_path: Path, monkeypatch):
+def test_mirror_builds_bisync_command(tmp_path: Path, monkeypatch):
     source = make_source(tmp_path)
     config = tmp_path / "config.toml"
     config.write_text(
-        '[backup]\nexclude = ["cfg", "dup"]\nmax_delete = 9\n', encoding="utf-8"
+        '[mirror]\nexclude = ["cfg", "dup"]\nmax_delete = 9\n', encoding="utf-8"
     )
     calls = fake_rclone(monkeypatch)
 
@@ -419,7 +419,7 @@ def test_backup_builds_bisync_command(tmp_path: Path, monkeypatch):
         [
             "--config",
             str(config),
-            "backup",
+            "mirror",
             "-s",
             str(source),
             "-d",
@@ -450,39 +450,39 @@ def test_backup_builds_bisync_command(tmp_path: Path, monkeypatch):
     ]
 
 
-def test_backup_defaults_to_quiet_and_max_delete_ten(tmp_path: Path, monkeypatch):
+def test_mirror_defaults_to_quiet_and_max_delete_ten(tmp_path: Path, monkeypatch):
     source = make_source(tmp_path)
     calls = fake_rclone(monkeypatch)
 
-    assert cli.main(["backup", "-s", str(source), "-d", "remote:photos"]) == 0
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 0
 
     assert calls[1][-3:] == ["--max-delete", "10", "--quiet"]
 
 
-def test_backup_empty_source_refuses(tmp_path: Path, monkeypatch, capsys):
+def test_mirror_empty_source_refuses(tmp_path: Path, monkeypatch, capsys):
     source = tmp_path / "src"
     source.mkdir()
     calls = fake_rclone(monkeypatch)
 
-    assert cli.main(["backup", "-s", str(source), "-d", "remote:photos"]) == 2
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 2
 
     assert calls == []
     assert "source is empty" in capsys.readouterr().err
 
 
-def test_backup_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
+def test_mirror_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
     source = tmp_path / "src"
     source.mkdir()
     calls = fake_rclone(monkeypatch)
 
     assert cli.main(
-        ["backup", "-s", str(source), "-d", "remote:photos", "--allow-empty"]
+        ["mirror", "-s", str(source), "-d", "remote:photos", "--allow-empty"]
     ) == 2
     assert calls == []
 
     assert cli.main(
         [
-            "backup",
+            "mirror",
             "-s",
             str(source),
             "-d",
@@ -494,38 +494,38 @@ def test_backup_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
     assert "--resync" in calls[1]
 
 
-def test_backup_dry_run_and_passthrough_exit_code(tmp_path: Path, monkeypatch):
+def test_mirror_dry_run_and_passthrough_exit_code(tmp_path: Path, monkeypatch):
     source = make_source(tmp_path)
     calls = fake_rclone(monkeypatch, bisync_code=7)
 
     assert cli.main(
-        ["backup", "-s", str(source), "-d", "remote:photos", "--dry-run", "--quiet"]
+        ["mirror", "-s", str(source), "-d", "remote:photos", "--dry-run", "--quiet"]
     ) == 7
 
     assert calls[1][-2:] == ["--dry-run", "--quiet"]
 
 
-def test_backup_rejects_old_or_missing_rclone(tmp_path: Path, monkeypatch, capsys):
+def test_mirror_rejects_old_or_missing_rclone(tmp_path: Path, monkeypatch, capsys):
     source = make_source(tmp_path)
 
     fake_rclone(monkeypatch, version="rclone v1.65.2\n")
-    assert cli.main(["backup", "-s", str(source), "-d", "remote:photos"]) == 1
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 1
     assert "too old" in capsys.readouterr().err
 
     fake_rclone(monkeypatch, version=FileNotFoundError())
-    assert cli.main(["backup", "-s", str(source), "-d", "remote:photos"]) == 1
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 1
     assert "not found" in capsys.readouterr().err
 
 
-def test_backup_rejects_invalid_max_delete(tmp_path: Path, monkeypatch):
+def test_mirror_rejects_invalid_max_delete(tmp_path: Path, monkeypatch):
     source = make_source(tmp_path)
     calls = fake_rclone(monkeypatch)
 
     assert cli.main(
-        ["backup", "-s", str(source), "-d", "remote:photos", "--max-delete", "-2"]
+        ["mirror", "-s", str(source), "-d", "remote:photos", "--max-delete", "-2"]
     ) == 2
     assert cli.main(
-        ["backup", "-s", str(source), "-d", "remote:photos", "--max-delete", "101"]
+        ["mirror", "-s", str(source), "-d", "remote:photos", "--max-delete", "101"]
     ) == 2
     assert calls == []
 

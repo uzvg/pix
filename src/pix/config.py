@@ -108,7 +108,7 @@ def _require_excludes(name: str, value: Any) -> list[str]:
 
 
 def validate_settings(settings: dict[str, Any]) -> None:
-    for section in ("shrink", "backup", "publish", "rclone"):
+    for section in ("shrink", "mirror", "publish", "rclone"):
         if not isinstance(settings.get(section), dict):
             raise ConfigError(f"[{section}] must be a table")
 
@@ -127,7 +127,7 @@ def validate_settings(settings: dict[str, Any]) -> None:
     ):
         raise ConfigError("shrink.include must be a list of extensions without dots")
 
-    for section in ("backup", "publish"):
+    for section in ("mirror", "publish"):
         _require_excludes(f"{section}.exclude", settings[section]["exclude"])
         require_int(f"{section}.max_delete", settings[section]["max_delete"], -1, 100)
 

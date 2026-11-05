@@ -11,7 +11,7 @@ from .config import ConfigError, init_config, load_settings
 from .doctor import doctor
 from .logger import Logger
 from .shrink import shrink
-from .sync import backup, publish
+from .sync import mirror, publish
 
 
 def _add_logging_args(parser: argparse.ArgumentParser) -> None:
@@ -39,21 +39,21 @@ def build_parser() -> argparse.ArgumentParser:
     shrink.add_argument("--dry-run", action="store_true")
     _add_logging_args(shrink)
 
-    backup = subparsers.add_parser("backup", help="bidirectionally mirror originals")
-    backup.add_argument("-s", "--source", type=Path, required=True)
-    backup.add_argument("-d", "--dest", required=True)
-    backup.add_argument("--exclude", action="append", default=None, metavar="GLOB")
-    backup.add_argument(
+    mirror = subparsers.add_parser("mirror", help="bidirectionally mirror originals")
+    mirror.add_argument("-s", "--source", type=Path, required=True)
+    mirror.add_argument("-d", "--dest", required=True)
+    mirror.add_argument("--exclude", action="append", default=None, metavar="GLOB")
+    mirror.add_argument(
         "--max-delete",
         type=int,
         default=None,
         metavar="PERCENT",
         help="abort if more than PERCENT%% of files are deleted (default: 10)",
     )
-    backup.add_argument("--allow-empty", action="store_true")
-    backup.add_argument("--resync", action="store_true")
-    backup.add_argument("--dry-run", action="store_true")
-    _add_logging_args(backup)
+    mirror.add_argument("--allow-empty", action="store_true")
+    mirror.add_argument("--resync", action="store_true")
+    mirror.add_argument("--dry-run", action="store_true")
+    _add_logging_args(mirror)
 
     publish = subparsers.add_parser("publish", help="bidirectionally mirror compressed images")
     publish.add_argument("-s", "--source", type=Path, required=True)
@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     handlers = {
         "shrink": shrink,
-        "backup": backup,
+        "mirror": mirror,
         "publish": publish,
         "doctor": doctor,
     }

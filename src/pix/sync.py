@@ -1,4 +1,4 @@
-"""backup and publish subcommands."""
+"""mirror and publish subcommands."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from .logger import Logger
 from .rclone import check_rclone, has_files, merge_excludes, run_rclone
 
 
-def backup(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> int:
-    config = settings["backup"]
+def mirror(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> int:
+    config = settings["mirror"]
     source = args.source
     if not source.is_dir():
         log.error(f"source is not a directory: {source}")
