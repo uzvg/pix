@@ -386,7 +386,14 @@ class FakeResult:
         self.stderr = stderr
 
 
-def fake_rclone(monkeypatch, bisync_code: int = 0, version: str | Exception = "rclone v1.67.0\n"):
+def fake_rclone(
+    monkeypatch,
+    bisync_code: int = 0,
+    version: str | Exception = "rclone v1.67.0\n",
+    dest_entries: list[dict] | None = None,
+    mkdir_code: int = 0,
+    lsjson_code: int = 0,
+):
     calls: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -395,6 +402,13 @@ def fake_rclone(monkeypatch, bisync_code: int = 0, version: str | Exception = "r
             if isinstance(version, Exception):
                 raise version
             return FakeResult(0, version)
+        if cmd[1] == "mkdir":
+            return FakeResult(mkdir_code)
+        if cmd[1] == "lsjson":
+            if lsjson_code:
+                return FakeResult(lsjson_code)
+            entries = dest_entries if dest_entries is not None else [{"Name": "existing"}]
+            return FakeResult(0, json.dumps(entries))
         return FakeResult(bisync_code)
 
     monkeypatch.setattr(rclone.subprocess, "run", fake_run)
@@ -434,7 +448,21 @@ def test_mirror_builds_bisync_command(tmp_path: Path, monkeypatch):
     ) == 0
 
     assert calls[0] == ["rclone", "version"]
-    assert calls[1] == [
+    assert calls[1] == ["rclone", "mkdir", "remote:photos"]
+    assert calls[2] == [
+        "rclone",
+        "lsjson",
+        "remote:photos",
+        "--max-depth",
+        "1",
+        "--exclude",
+        "cfg",
+        "--exclude",
+        "dup",
+        "--exclude",
+        "cli",
+    ]
+    assert calls[3] == [
         "rclone",
         "bisync",
         str(source),
@@ -457,7 +485,7 @@ def test_mirror_defaults_to_quiet_and_max_delete_ten(tmp_path: Path, monkeypatch
 
     assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 0
 
-    assert calls[1][-3:] == ["--max-delete", "10", "--quiet"]
+    assert calls[3][-3:] == ["--max-delete", "10", "--quiet"]
 
 
 def test_mirror_empty_source_refuses(tmp_path: Path, monkeypatch, capsys):
@@ -492,7 +520,7 @@ def test_mirror_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
             "--resync",
         ]
     ) == 0
-    assert "--resync" in calls[1]
+    assert "--resync" in calls[2]
 
 
 def _slow_rclone(monkeypatch):
@@ -550,7 +578,64 @@ def test_mirror_dry_run_and_passthrough_exit_code(tmp_path: Path, monkeypatch):
         ["mirror", "-s", str(source), "-d", "remote:photos", "--dry-run", "--quiet"]
     ) == 7
 
-    assert calls[1][-2:] == ["--dry-run", "--quiet"]
+    assert calls[3][-2:] == ["--dry-run", "--quiet"]
+
+
+def test_mirror_initializes_empty_destination(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    calls = fake_rclone(monkeypatch, dest_entries=[])
+
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 0
+
+    assert calls[1] == ["rclone", "mkdir", "remote:photos"]
+    assert calls[2] == ["rclone", "lsjson", "remote:photos", "--max-depth", "1"]
+    assert calls[3][:4] == ["rclone", "bisync", str(source), "remote:photos"]
+    assert "--resync" in calls[3]
+
+
+def test_mirror_non_empty_destination_does_not_resync(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 0
+
+    assert calls[1][:2] == ["rclone", "mkdir"]
+    assert "--resync" not in calls[3]
+
+
+def test_mirror_dry_run_initializes_empty_destination(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    calls = fake_rclone(monkeypatch, dest_entries=[])
+
+    assert cli.main(
+        ["mirror", "-s", str(source), "-d", "remote:photos", "--dry-run"]
+    ) == 0
+
+    assert calls[1][:2] == ["rclone", "mkdir"]
+    assert "--resync" in calls[3]
+    assert "--dry-run" in calls[3]
+
+
+def test_mirror_preflight_failure_aborts(tmp_path: Path, monkeypatch, capsys):
+    source = make_source(tmp_path)
+
+    calls = fake_rclone(monkeypatch, mkdir_code=1)
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 1
+    assert not any(cmd[1] == "bisync" for cmd in calls)
+    assert "cannot create destination" in capsys.readouterr().err
+
+    calls = fake_rclone(monkeypatch, lsjson_code=3)
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 1
+    assert not any(cmd[1] == "bisync" for cmd in calls)
+    assert "cannot inspect destination" in capsys.readouterr().err
+
+
+def test_mirror_missing_baseline_hint(tmp_path: Path, monkeypatch, capsys):
+    source = make_source(tmp_path)
+    fake_rclone(monkeypatch, bisync_code=7)
+
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 7
+    assert "rerun with --resync" in capsys.readouterr().err
 
 
 def test_mirror_rejects_old_or_missing_rclone(tmp_path: Path, monkeypatch, capsys):
@@ -608,7 +693,7 @@ def test_publish_builds_bisync_command_with_pix_exclude(tmp_path: Path, monkeypa
         ]
     ) == 0
 
-    assert calls[1] == [
+    assert calls[3] == [
         "rclone",
         "bisync",
         str(source),
@@ -623,6 +708,25 @@ def test_publish_builds_bisync_command_with_pix_exclude(tmp_path: Path, monkeypa
         "10",
         "--quiet",
     ]
+
+
+def test_publish_initializes_empty_destination_with_excludes(tmp_path: Path, monkeypatch):
+    source = make_avif_source(tmp_path, "a.avif")
+    calls = fake_rclone(monkeypatch, dest_entries=[])
+
+    assert cli.main(["publish", "-s", str(source), "-d", "r2:images"]) == 0
+
+    assert calls[1] == ["rclone", "mkdir", "r2:images"]
+    assert calls[2] == [
+        "rclone",
+        "lsjson",
+        "r2:images",
+        "--max-depth",
+        "1",
+        "--exclude",
+        ".pix/**",
+    ]
+    assert "--resync" in calls[3]
 
 
 def test_publish_requires_avif(tmp_path: Path, monkeypatch, capsys):
@@ -658,7 +762,7 @@ def test_publish_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
             "--resync",
         ]
     ) == 0
-    assert "--resync" in calls[1]
+    assert "--resync" in calls[2]
 
 
 def test_publish_outputs_sorted_encoded_url_manifest(tmp_path: Path, monkeypatch, capsys):
@@ -745,7 +849,7 @@ def test_publish_dry_run_outputs_no_manifest(tmp_path: Path, monkeypatch, capsys
     ) == 0
 
     assert capsys.readouterr().out == ""
-    assert "--dry-run" in calls[1]
+    assert "--dry-run" in calls[3]
 
 
 def test_publish_passthrough_exit_code_hides_manifest(tmp_path: Path, monkeypatch, capsys):

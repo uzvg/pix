@@ -11,6 +11,7 @@
 - 真实 rclone 的本地目录端到端（首次 `--resync`、二次增量、双向删除）已验证；`pix shrink` 与 `vips thumbnail` 的 AVIF 字节一致性已验证。真实 R2 与 Windows 原生库仍待手工验证。
 - 文档已按新定位重写，并完成 2026-11-04 审计修复。
 - 2026-11-04：`cli.py` 已按职责拆分，`cli.py` 作为组合根（D27）。
+- 2026-11-06：`mirror` / `publish` 自动创建目标；目标为空时自动初始化基线（D30）。本地端到端已验证：目标不存在时首次同步成功，第二次增量成功。
 
 ## M0. 文档重写（完成）
 
@@ -76,7 +77,7 @@
 
 ## M3. mirror
 
-- [ ] 目标预检：自动 `rclone mkdir`，目标为空时自动 resync（D30）。
+- [x] 目标预检：自动 `rclone mkdir`，目标为空时自动 resync（D30）。
 - [x] rclone 路径解析与本地源目录校验；空源默认拒绝，`--allow-empty` 加 `--resync` 才放行。
 - [x] bisync 命令拼装：`--exclude`（合并去重）、`--max-delete`（默认 10%，百分比）、`--resync`、`--dry-run`、`-v` / `--quiet`。
 - [x] mock `subprocess.run`，断言 argv 和退出码透传。
@@ -92,7 +93,7 @@
 
 ## M4. publish
 
-- [ ] 目标预检与 `mirror` 共用，判空带上 `.pix/**`。
+- [x] 目标预检与 `mirror` 共用，判空带上 `.pix/**`。
 - [x] bisync 命令固定追加 `--exclude .pix/**`，配置排除项随后，命令行追加。
 - [x] `publish` 源必须是含至少一个 `.avif` 的目录；空源需 `--allow-empty` 加 `--resync`。
 - [x] `--max-delete` 默认 10%，与 `mirror` 一致。

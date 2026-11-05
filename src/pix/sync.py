@@ -10,7 +10,58 @@ from urllib.parse import quote
 
 from .config import ConfigError, require_int
 from .logger import Logger
-from .rclone import check_rclone, has_files, merge_excludes, run_rclone
+from .rclone import (
+    check_rclone,
+    dest_is_empty,
+    ensure_dest,
+    has_files,
+    merge_excludes,
+    run_rclone,
+)
+
+
+def _run_bisync(
+    binary: str,
+    version: str,
+    source: Path,
+    dest: str,
+    excludes: list[str],
+    max_delete: int,
+    args: argparse.Namespace,
+    log: Logger,
+) -> int:
+    if not ensure_dest(binary, dest, log):
+        log.error(f"cannot create destination directory: {dest}")
+        return 1
+
+    resync = bool(args.resync)
+    if not resync:
+        empty = dest_is_empty(binary, dest, excludes, log)
+        if empty is None:
+            return 1
+        if empty:
+            log.info("destination is empty; initializing sync baseline")
+            resync = True
+
+    cmd = [binary, "bisync", str(source), dest]
+    for pattern in excludes:
+        cmd += ["--exclude", pattern]
+    cmd += ["--max-delete", str(max_delete)]
+    if resync:
+        cmd.append("--resync")
+    if args.dry_run:
+        cmd.append("--dry-run")
+    cmd.append("--progress" if args.verbose else "--quiet")
+
+    log.info(f"bisync {source} <-> {dest} (rclone {version})")
+    log.detail(" ".join(cmd))
+    code = run_rclone(cmd, log)
+    if code == 7 and not resync:
+        log.error(
+            "if the destination already has content and this is the first sync, "
+            "rerun with --resync to initialize the baseline"
+        )
+    return code
 
 
 def mirror(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> int:
@@ -45,19 +96,9 @@ def mirror(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
         return 1
 
     excludes = merge_excludes(config["exclude"], args.exclude)
-    cmd = [binary, "bisync", str(source), args.dest]
-    for pattern in excludes:
-        cmd += ["--exclude", pattern]
-    cmd += ["--max-delete", str(max_delete)]
-    if args.resync:
-        cmd.append("--resync")
-    if args.dry_run:
-        cmd.append("--dry-run")
-    cmd.append("--progress" if args.verbose else "--quiet")
-
-    log.info(f"bisync {source} <-> {args.dest} (rclone {version})")
-    log.detail(" ".join(cmd))
-    return run_rclone(cmd, log)
+    return _run_bisync(
+        binary, version, source, args.dest, excludes, max_delete, args, log
+    )
 
 
 def _collect_avif(source: Path) -> list[Path]:
@@ -112,19 +153,9 @@ def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> 
         return 1
 
     excludes = merge_excludes([".pix/**"], config["exclude"], args.exclude)
-    cmd = [binary, "bisync", str(source), args.dest]
-    for pattern in excludes:
-        cmd += ["--exclude", pattern]
-    cmd += ["--max-delete", str(max_delete)]
-    if args.resync:
-        cmd.append("--resync")
-    if args.dry_run:
-        cmd.append("--dry-run")
-    cmd.append("--progress" if args.verbose else "--quiet")
-
-    log.info(f"bisync {source} <-> {args.dest} (rclone {version})")
-    log.detail(" ".join(cmd))
-    code = run_rclone(cmd, log)
+    code = _run_bisync(
+        binary, version, source, args.dest, excludes, max_delete, args, log
+    )
     if code != 0 or args.dry_run or not urls:
         return code
 

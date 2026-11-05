@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -32,6 +33,39 @@ def merge_excludes(*groups: list[str] | None) -> list[str]:
 
 def has_files(path: Path) -> bool:
     return any(item.is_file() for item in path.rglob("*"))
+
+
+def ensure_dest(binary: str, dest: str, log: Logger) -> bool:
+    return run_rclone([binary, "mkdir", dest], log) == 0
+
+
+def dest_is_empty(
+    binary: str, dest: str, excludes: list[str], log: Logger
+) -> bool | None:
+    cmd = [binary, "lsjson", dest, "--max-depth", "1"]
+    for pattern in excludes:
+        cmd += ["--exclude", pattern]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        log.error(f"rclone not found: {binary}")
+        return None
+    except OSError as exc:
+        log.error(f"cannot run rclone: {exc}")
+        return None
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        log.error(f"cannot inspect destination {dest}: {detail or 'rclone failed'}")
+        return None
+    try:
+        entries = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        log.error(f"cannot parse listing for {dest}: {exc}")
+        return None
+    if not isinstance(entries, list):
+        log.error(f"cannot parse listing for {dest}: expected a JSON array")
+        return None
+    return not entries
 
 
 def probe_rclone(binary: str) -> tuple[str | None, tuple[int, int, int] | None, str | None]:
