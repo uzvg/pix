@@ -403,8 +403,10 @@ def fake_rclone(
     bisync_code: int = 0,
     version: str | Exception = "rclone v1.67.0\n",
     dest_entries: list[dict] | None = None,
+    source_entries: list[dict] | None = None,
     mkdir_code: int = 0,
     lsjson_code: int = 0,
+    source_lsjson_code: int = 0,
 ):
     calls: list[list[str]] = []
 
@@ -419,6 +421,19 @@ def fake_rclone(
         if cmd[1] == "lsjson":
             if lsjson_code:
                 return FakeResult(lsjson_code)
+            if "--recursive" in cmd:
+                if source_lsjson_code:
+                    return FakeResult(source_lsjson_code)
+                if source_entries is None:
+                    root = Path(cmd[2])
+                    entries = [
+                        {"Path": path.relative_to(root).as_posix()}
+                        for path in sorted(root.rglob("*"))
+                        if path.is_file()
+                    ]
+                else:
+                    entries = source_entries
+                return FakeResult(0, json.dumps(entries))
             entries = dest_entries if dest_entries is not None else [{"Name": "existing"}]
             return FakeResult(0, json.dumps(entries))
         return FakeResult(bisync_code)
@@ -865,6 +880,73 @@ def test_publish_outputs_sorted_encoded_url_manifest(tmp_path: Path, monkeypatch
     assert list(manifest) == ["2024/a b.avif", "z.avif"]
     assert manifest["2024/a b.avif"] == "https://img.example.com/2024/a%20b.avif"
     assert manifest["z.avif"] == "https://img.example.com/z.avif"
+
+
+def test_publish_manifest_uses_filtered_source_listing(tmp_path: Path, monkeypatch, capsys):
+    source = make_avif_source(tmp_path, "keep.avif", "skip.avif", "nested/also.avif")
+    config = tmp_path / "config.toml"
+    config.write_text('[publish]\nexclude = ["skip.avif"]\n', encoding="utf-8")
+    calls = fake_rclone(
+        monkeypatch,
+        source_entries=[{"Path": "keep.avif"}, {"Path": "nested/also.avif"}],
+    )
+
+    assert cli.main(
+        [
+            "--config",
+            str(config),
+            "publish",
+            "-s",
+            str(source),
+            "-d",
+            "r2:images",
+            "--base-url",
+            "https://img.example.com",
+            "--urls",
+        ]
+    ) == 0
+
+    manifest = json.loads(capsys.readouterr().out)
+    assert list(manifest) == ["keep.avif", "nested/also.avif"]
+    listing = calls[-1]
+    assert listing[:5] == [
+        "rclone",
+        "lsjson",
+        str(source),
+        "--recursive",
+        "--files-only",
+    ]
+    assert "--filter-from" in listing
+    assert "--ignore-case" in listing
+    filters = filter_path(listing, "--filter-from").read_text(encoding="utf-8")
+    assert filters.splitlines() == [
+        "- .pix/**",
+        "- skip.avif",
+        "+ *.{avif}",
+        "- **",
+    ]
+
+
+def test_publish_manifest_listing_failure_returns_one(tmp_path: Path, monkeypatch, capsys):
+    source = make_avif_source(tmp_path, "a.avif")
+    fake_rclone(monkeypatch, source_lsjson_code=4)
+
+    assert cli.main(
+        [
+            "publish",
+            "-s",
+            str(source),
+            "-d",
+            "r2:images",
+            "--base-url",
+            "https://img.example.com",
+            "--urls",
+        ]
+    ) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "cannot inspect source" in captured.err
 
 
 def test_publish_no_urls_overrides_config(tmp_path: Path, monkeypatch, capsys):

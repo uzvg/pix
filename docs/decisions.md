@@ -199,3 +199,9 @@
 **原因**：`pix` 的职责是图片流水线。用户把笔记目录、项目目录作为源时，不应把 Markdown、Git 元数据或其他附件镜像到云盘。默认白名单让最常见的用法直接正确，配置项允许用户补充 RAW、视频等扩展名。使用 filters 文件而不是 `--include`，是因为 rclone bisync 会记录 filters 文件的 md5；白名单或排除项变化时，不带 `--resync` 的运行会以退出码 7 拒绝，避免把“规则变更后不再匹配”的文件误判成删除并传播。`publish` 的输出目录本来就是 AVIF 产物，固定只同步 `.avif` 与命令职责一致，也避免 `.pix` 之外的其他文件被上传。
 
 **影响**：升级后已存在的远端基线没有 filters 文件的 md5，首次运行必须显式 `--resync`；`--dry-run --resync` 只预览、不写 md5，正式同步前仍需一次真实 `--resync`。被过滤掉的远端非图片文件不会被删除。`include = []` 保留同步全部文件的退路，但此时不写 filters 文件，`--exclude` 行为与旧版一致。
+
+## D32. URL 清单复用 publish 的过滤规则
+
+**决策**：生成 URL 清单时不再直接扫描 OUT 下所有 `.avif`，而是用与 bisync 相同的 filters 文件执行 `rclone lsjson OUT --recursive --files-only --filter-from ... --ignore-case`，只列出实际参与同步的文件。清单仍只在 bisync 成功且非 `--dry-run` 时输出；清单生成失败返回 1。
+
+**原因**：此前清单直接递归收集全部 `.avif`，不应用 `[publish].exclude` / `--exclude`，被排除的文件虽然没有上传，却仍会出现在公开 URL 清单里，既误导又可能泄露不应公开的路径。复用 rclone 过滤而不是在 Python 里重写 glob，能保证清单与实际上传集合一致，也自然覆盖 rclone 的大小写不敏感和复杂 glob 语义。

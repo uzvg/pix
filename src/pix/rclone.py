@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 from .logger import Logger
 
@@ -72,10 +73,10 @@ def ensure_dest(binary: str, dest: str, log: Logger) -> bool:
     return run_rclone([binary, "mkdir", dest], log) == 0
 
 
-def dest_is_empty(
-    binary: str, dest: str, filter_args: list[str], log: Logger
-) -> bool | None:
-    cmd = [binary, "lsjson", dest, "--max-depth", "1", *filter_args]
+def _lsjson(
+    binary: str, target: str, args: list[str], log: Logger, label: str
+) -> list[Any] | None:
+    cmd = [binary, "lsjson", target, *args]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
     except FileNotFoundError:
@@ -86,17 +87,47 @@ def dest_is_empty(
         return None
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        log.error(f"cannot inspect destination {dest}: {detail or 'rclone failed'}")
+        log.error(f"cannot inspect {label}: {detail or 'rclone failed'}")
         return None
     try:
         entries = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as exc:
-        log.error(f"cannot parse listing for {dest}: {exc}")
+        log.error(f"cannot parse listing for {label}: {exc}")
         return None
     if not isinstance(entries, list):
-        log.error(f"cannot parse listing for {dest}: expected a JSON array")
+        log.error(f"cannot parse listing for {label}: expected a JSON array")
         return None
-    return not entries
+    return entries
+
+
+def dest_is_empty(
+    binary: str, dest: str, filter_args: list[str], log: Logger
+) -> bool | None:
+    entries = _lsjson(
+        binary, dest, ["--max-depth", "1", *filter_args], log, f"destination {dest}"
+    )
+    return None if entries is None else not entries
+
+
+def list_files(
+    binary: str, path: Path, filter_args: list[str], log: Logger
+) -> list[str] | None:
+    entries = _lsjson(
+        binary,
+        str(path),
+        ["--recursive", "--files-only", *filter_args],
+        log,
+        f"source {path}",
+    )
+    if entries is None:
+        return None
+    paths: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("Path"), str):
+            log.error(f"cannot parse listing for source {path}: missing Path")
+            return None
+        paths.append(entry["Path"].replace("\\", "/"))
+    return paths
 
 
 def probe_rclone(binary: str) -> tuple[str | None, tuple[int, int, int] | None, str | None]:

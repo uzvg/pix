@@ -361,7 +361,7 @@ cmd.append("--progress" if verbose else "--quiet")
   }
   ```
 
-- 生成清单时递归收集 OUT 下所有 `.avif`（大小写不敏感），路径段用 `urllib.parse.quote(..., safe="/")` 编码。
+- 生成清单时用与同步相同的 filters 文件执行 `rclone lsjson OUT --recursive --files-only --filter-from ... --ignore-case`，只列出实际参与同步的 `.avif`；被 `.pix/**`、`[publish].exclude` 或 `--exclude` 排除的文件不会出现在清单中。路径段用 `urllib.parse.quote(..., safe="/")` 编码；清单生成失败返回 1。
 - `base_url` 末尾的 `/` 在拼接时去掉。
 - `--dry-run` 不生成 URL 清单。
 - 修改排除项后必须先 `--resync`，规则同 `mirror`。

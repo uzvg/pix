@@ -14,6 +14,7 @@
 - 2026-11-06：`mirror` / `publish` 自动创建目标；目标为空时自动初始化基线（D30）。本地端到端已验证：目标不存在时首次同步成功，第二次增量成功。
 - 2026-11-06：`mirror` 默认只同步图片扩展名，`[mirror].include` 可配置；`publish` 固定只同步 `.avif`（D31）。
 - 2026-11-06：README 按 0.1.4 的实际行为复核，修正安装、快速上手、空源、dry-run 与 URL 清单说明。
+- 2026-11-06：修复 `publish` URL 清单不按排除项过滤的问题；清单改用与同步相同的 rclone filters。
 
 ## M0. 文档重写（完成）
 
@@ -105,6 +106,7 @@
 - [x] `--max-delete` 默认 10%，与 `mirror` 一致。
 - [x] `--base-url` / `[publish].base_url` 合并，协议必须是 `http(s)://`。
 - [x] `--urls` / `--no-urls` 合并与 JSON 输出，路径段编码正确。
+- [x] URL 清单使用与同步相同的 filters，不包含被排除的文件。
 - [x] 缺少 base_url 时退出 2，且在调用 rclone 前拒绝。
 - [x] `--dry-run` 不输出 URL 清单。
 

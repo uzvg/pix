@@ -16,6 +16,7 @@ from .rclone import (
     ensure_dest,
     filters_file,
     has_files,
+    list_files,
     merge_excludes,
     run_rclone,
 )
@@ -209,14 +210,9 @@ def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> 
         return code
 
     root = base_url.rstrip("/")
-    try:
-        files = _collect_avif(source)
-    except OSError as exc:
-        log.error(f"cannot scan {source}: {exc}")
+    files = list_files(binary, source, listing_filter_args, log)
+    if files is None:
         return 1
-    manifest = {
-        rel: f"{root}/{quote(rel, safe='/')}"
-        for rel in (path.relative_to(source).as_posix() for path in files)
-    }
+    manifest = {rel: f"{root}/{quote(rel, safe='/')}" for rel in files}
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
     return code

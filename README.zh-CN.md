@@ -156,7 +156,7 @@ pix config init
      --base-url https://img.example.com --urls > urls.json
    ```
 
-   `publish` 要求源目录至少有一个 `.avif`，除非显式传入 `--allow-empty --resync`；只同步 `.avif` 文件，并固定排除 `.pix/**`。URL 清单只在同步成功且不是 `--dry-run` 时输出到 stdout。清单列出 OUT 下所有 `.avif`，不只是本次变化的文件，也不按 `[publish].exclude` 或 `--exclude` 过滤；被排除的文件仍可能出现在清单里。如果依赖 exclude 隐藏文件，目前不要发布清单，直到该行为修复。
+   `publish` 要求源目录至少有一个 `.avif`，除非显式传入 `--allow-empty --resync`；只同步 `.avif` 文件，并固定排除 `.pix/**`。URL 清单只在同步成功且不是 `--dry-run` 时输出到 stdout。清单列出 OUT 中通过同一套同步过滤规则的 `.avif`，被 `[publish].exclude` 或 `--exclude` 排除的文件不会出现；不只是本次变化的文件。
 
 5. 之后重复运行：
 

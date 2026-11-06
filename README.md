@@ -156,7 +156,7 @@ The default `[mirror].include` is `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `t
      --base-url https://img.example.com --urls > urls.json
    ```
 
-   `publish` requires at least one `.avif` in the source unless you pass `--allow-empty --resync`; it syncs only `.avif` files and always excludes `.pix/**`. The URL manifest is printed to stdout as JSON only after a successful, non-dry-run sync. It lists every `.avif` under OUT, not just files changed in this run, and is not filtered by `[publish].exclude` or `--exclude`; excluded files can still appear in it. If you rely on excludes to hide files, do not publish the manifest until this behavior is fixed.
+   `publish` requires at least one `.avif` in the source unless you pass `--allow-empty --resync`; it syncs only `.avif` files and always excludes `.pix/**`. The URL manifest is printed to stdout as JSON only after a successful, non-dry-run sync. It lists every `.avif` under OUT that passed the same filters as the sync, so files excluded by `[publish].exclude` or `--exclude` do not appear. It is not limited to files changed in this run.
 
 5. Re-run later:
 
