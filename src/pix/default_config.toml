@@ -14,6 +14,12 @@ min_size = 0
 include = ["jpg", "jpeg", "png", "webp"]
 
 [mirror]
+# Image extensions to mirror, written without dots. Empty list mirrors every file.
+include = [
+  "jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff",
+  "heic", "heif", "avif", "jxl", "svg", "ico",
+  "cr2", "cr3", "nef", "arw", "dng", "orf", "raf", "rw2",
+]
 # rclone exclude globs; command-line --exclude is appended after these.
 exclude = []
 # Maximum percent of files rclone may delete (-1 disables, 0 forbids).

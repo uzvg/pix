@@ -101,7 +101,8 @@ pix config init
 | | `effort` | `5` | libvips effort，0–9 |
 | | `min_size` | `0` | 小于该值的源文件跳过；支持 `500K`、`1M`、`2G` |
 | | `include` | `jpg`、`jpeg`、`png`、`webp` | 扫描扩展名，不带点 |
-| `[mirror]` | `exclude` | `[]` | rclone 排除 glob；命令行项会追加 |
+| `[mirror]` | `include` | 常见图片扩展名 | 需要镜像的扩展名，不带点；`[]` 关闭白名单 |
+| | `exclude` | `[]` | rclone 排除 glob；命令行项会追加 |
 | | `max_delete` | `10` | 删除百分比上限；`-1` 不限制，`0` 禁止删除 |
 | `[publish]` | `base_url` | `""` | 公开 URL 前缀，必须以 `http://` 或 `https://` 开头 |
 | | `urls` | `false` | 是否输出 JSON URL 清单 |
@@ -110,6 +111,8 @@ pix config init
 | `[rclone]` | `binary` | `rclone` | rclone 可执行文件名或路径 |
 
 优先级为**命令行 > pix 配置 > 内置默认**。`--exclude` 是追加而非覆盖配置项。`-q` 表示 quality，静默模式用 `--quiet`（无短选项）。
+
+`[mirror].include` 默认为 `jpg`、`jpeg`、`png`、`webp`、`gif`、`bmp`、`tif`、`tiff`、`heic`、`heif`、`avif`、`jxl`、`svg`、`ico`、`cr2`、`cr3`、`nef`、`arw`、`dng`、`orf`、`raf`、`rw2`。设为 `[]` 可镜像所有文件。
 
 ## 快速上手
 
@@ -135,7 +138,7 @@ pix config init
    pix mirror -s ~/Pictures -d onedrive:photos
    ```
 
-   目标目录会自动创建。目标为空时会自动初始化基线，首次运行不需要 `--resync`；只有目标已有内容、需要重建基线，或修改排除项后才需要显式加 `--resync`。建议先跑 `--dry-run` 预览。
+   目标目录会自动创建。只有匹配 `[mirror].include` 的文件会被镜像，源目录里的其他文件会被忽略。目标为空时会自动初始化基线，首次运行不需要 `--resync`；目标已有内容需要重建基线，或修改 `include` / `exclude` 后，才需要显式加 `--resync`。从没有 include 过滤的旧版本升级后，首次运行也需要 `--resync`；建议先跑 `--dry-run --resync` 预览。
 
 4. 发布 AVIF 输出：
 
@@ -144,7 +147,7 @@ pix config init
      --base-url https://img.example.com --urls > urls.json
    ```
 
-   `publish` 要求源目录至少有一个 `.avif`，并固定排除 `.pix/**`。URL 清单只在同步成功且不是 `--dry-run` 时输出到 stdout。
+   `publish` 要求源目录至少有一个 `.avif`，只同步 `.avif` 文件，并固定排除 `.pix/**`。URL 清单只在同步成功且不是 `--dry-run` 时输出到 stdout。
 
 5. 之后重复运行：
 
@@ -165,7 +168,7 @@ pix config init
 | 删除源已消失的输出 | `pix shrink -s SRC -d OUT --prune` |
 | 预览同步 | `pix mirror -s SRC -d REMOTE --dry-run` |
 | 首次同步（目标不存在或为空） | `pix mirror -s SRC -d REMOTE` |
-| 重建基线（目标非空，或修改排除项后） | `pix mirror -s SRC -d REMOTE --resync` |
+| 重建基线（目标非空，或修改 include/exclude 后） | `pix mirror -s SRC -d REMOTE --resync` |
 | 输出 URL 清单 | `pix publish -s OUT -d REMOTE --base-url https://img.example.com --urls` |
 | 诊断环境 | `pix doctor` |
 | 生成配置文件 | `pix config init` |
@@ -177,7 +180,8 @@ pix config init
 | 任意一侧删除文件 | 删除双向传播，误删不可逆 | 先 `--dry-run`；默认 `--max-delete 10`（百分比） |
 | 首次同步（目标为空） | `pix` 自动创建目标并初始化基线 | 先 `--dry-run` 预览；不需要手动运行 rclone |
 | 目标已有内容但没有基线 | `pix` 不自动 resync，bisync 失败而不是覆盖 | 确认以哪边为准后显式加 `--resync` |
-| 修改排除项 | 旧基线可能把被排除的文件当成删除传播 | 修改后必须重新 `--resync` |
+| 修改 include/exclude | rclone 会检测到 filters 文件变化并拒绝运行，或旧基线把被过滤的文件当成删除传播 | 修改后必须重新 `--resync` |
+| 源目录含非图片文件 | `mirror` 默认忽略；`publish` 只同步 `.avif` | 需要镜像时把扩展名加入 `[mirror].include` |
 | 源目录为空 | `mirror` / `publish` 默认拒绝；`shrink --prune` 同样拒绝 | 仅在确认要清空时用 `--allow-empty`（同步还需 `--resync`） |
 | `a.jpg` 与 `a.jpeg` 同时存在 | 映射到同一输出 | 编码前检测并以 2 退出 |
 | 同时运行两个 shrink | 会写同一份状态和输出 | `OUT/.pix/lock` 阻止第二个进程 |
@@ -204,7 +208,7 @@ URL 清单示例：
 |---|---|
 | 提示 `pyvips/libvips unavailable` | 重装以带入 libvips：`uv tool install --force --editable /path/to/pix`；或手动安装 libvips（Linux：`apt install libvips42`；Windows：下载 libvips release 压缩包并把 `bin` 加入 PATH） |
 | rclone 版本低于 1.66 | 升级 rclone |
-| bisync 报缺少基线 | 目标是空的会自动初始化；目标非空时确认本地为准后加 `--resync` |
+| bisync 报缺少基线或 filters 文件变化 | 目标非空，或 include/exclude 规则变化（含升级后首次运行）。确认本地为准后加 `--resync`；目标是空的会自动初始化 |
 | `OUT/.pix/lock` 已存在 | 确认没有其他 `shrink` 在运行，再删除陈旧锁 |
 | 配置解析失败 | 运行 `pix doctor` 定位文件；修复 TOML，或删除配置改用默认值 |
 | `publish` 提示源目录没有 `.avif` | 先运行 `pix shrink` |

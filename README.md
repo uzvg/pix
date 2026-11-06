@@ -101,7 +101,8 @@ Common keys:
 | | `effort` | `5` | libvips effort, 0–9 |
 | | `min_size` | `0` | Skip sources smaller than this; accepts `500K`, `1M`, `2G` |
 | | `include` | `jpg`, `jpeg`, `png`, `webp` | Extensions to scan, without dots |
-| `[mirror]` | `exclude` | `[]` | rclone exclude globs; command-line values are appended |
+| `[mirror]` | `include` | common image extensions | Extensions to mirror, without dots; `[]` disables the whitelist |
+| | `exclude` | `[]` | rclone exclude globs; command-line values are appended |
 | | `max_delete` | `10` | Delete limit as a percentage; `-1` disables, `0` forbids |
 | `[publish]` | `base_url` | `""` | Public URL prefix; must start with `http://` or `https://` |
 | | `urls` | `false` | Emit a JSON URL manifest |
@@ -110,6 +111,8 @@ Common keys:
 | `[rclone]` | `binary` | `rclone` | rclone executable name or path |
 
 Precedence is **command line > pix config > built-in defaults**. `--exclude` is appended to config excludes rather than replacing them. `-q` means quality; silence is `--quiet` (no short form).
+
+The default `[mirror].include` is `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `tif`, `tiff`, `heic`, `heif`, `avif`, `jxl`, `svg`, `ico`, `cr2`, `cr3`, `nef`, `arw`, `dng`, `orf`, `raf`, `rw2`. Set it to `[]` to mirror every file.
 
 ## Quick start
 
@@ -135,7 +138,7 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
    pix mirror -s ~/Pictures -d onedrive:photos
    ```
 
-   The destination is created automatically. An empty destination initializes its own baseline, so no `--resync` is needed on the first run. Use `--resync` only to rebuild the baseline when the destination already has content, or after changing excludes. Preview with `--dry-run` first.
+   The destination is created automatically. Only files matching `[mirror].include` are mirrored; other files in the source directory are ignored. An empty destination initializes its own baseline, so no `--resync` is needed on the first run. Use `--resync` to rebuild the baseline when the destination already has content, or after changing `include`/`exclude`. After upgrading from a version without include filtering, the first run also needs `--resync`; preview with `--dry-run --resync` first.
 
 4. Publish the AVIF output:
 
@@ -144,7 +147,7 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
      --base-url https://img.example.com --urls > urls.json
    ```
 
-   `publish` requires at least one `.avif` in the source and always excludes `.pix/**`. The URL manifest is printed to stdout as JSON only after a successful, non-dry-run sync.
+   `publish` requires at least one `.avif` in the source, syncs only `.avif` files, and always excludes `.pix/**`. The URL manifest is printed to stdout as JSON only after a successful, non-dry-run sync.
 
 5. Re-run later:
 
@@ -165,7 +168,7 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 | Remove outputs whose source is gone | `pix shrink -s SRC -d OUT --prune` |
 | Preview a sync | `pix mirror -s SRC -d REMOTE --dry-run` |
 | First sync (new or empty destination) | `pix mirror -s SRC -d REMOTE` |
-| Rebuild the baseline (non-empty destination, or after changing excludes) | `pix mirror -s SRC -d REMOTE --resync` |
+| Rebuild the baseline (non-empty destination, or after changing include/exclude) | `pix mirror -s SRC -d REMOTE --resync` |
 | Emit a URL manifest | `pix publish -s OUT -d REMOTE --base-url https://img.example.com --urls` |
 | Diagnose the environment | `pix doctor` |
 | Generate a config file | `pix config init` |
@@ -177,7 +180,8 @@ Precedence is **command line > pix config > built-in defaults**. `--exclude` is 
 | Deletions on either side | Propagated in both directions; accidental deletion is irreversible | Preview with `--dry-run`; default `--max-delete 10` (percentage) |
 | First sync (destination empty) | `pix` creates the destination and initializes the baseline | Preview with `--dry-run`; no manual rclone needed |
 | Destination has content but no baseline | `pix` does not auto-resync; bisync fails instead of overwriting | Confirm which side is authoritative, then add `--resync` |
-| Excludes changed | The old baseline may treat excluded files as deletions | Run with `--resync` again after changing excludes |
+| Include/exclude filters changed | rclone detects the changed filters file and refuses to run, or the old baseline may treat filtered files as deletions | Run with `--resync` again after changing `include` or `exclude` |
+| Non-image files in the source | `mirror` ignores them by default; `publish` ignores anything that is not `.avif` | Add extensions to `[mirror].include` if they should be mirrored |
 | Empty source | `mirror` / `publish` refuse; `shrink --prune` also refuses | Use `--allow-empty` (plus `--resync` for sync) only when intentional |
 | `a.jpg` and `a.jpeg` both exist | Both map to the same output | Detected before encoding; exits 2 |
 | Two concurrent shrinks | They would write the same state and outputs | `OUT/.pix/lock` blocks the second process |
@@ -204,7 +208,7 @@ URL manifest example:
 |---|---|
 | `pyvips/libvips unavailable` | Reinstall to bring libvips: `uv tool install --force --editable /path/to/pix`; or install libvips manually (Linux: `apt install libvips42`, Windows: libvips release zip on `PATH`) |
 | rclone is older than 1.66 | Upgrade rclone |
-| bisync reports a missing baseline | The destination is non-empty. Confirm local should win, then add `--resync`; an empty destination initializes automatically. |
+| bisync reports a missing baseline or changed filters file | The destination is non-empty, or the include/exclude rules changed (including the first run after upgrading). Confirm local should win, then add `--resync`; an empty destination initializes automatically. |
 | `OUT/.pix/lock` already exists | Check for another `shrink`, then remove a stale lock |
 | Configuration fails to parse | Run `pix doctor` to locate the file; fix the TOML or remove the file to fall back to defaults |
 | `publish` says the source has no `.avif` | Run `pix shrink` first |

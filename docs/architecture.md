@@ -74,14 +74,17 @@ tests/
 | `config` | `load_config(path: Path) -> dict` | 读取 TOML；默认路径不存在时返回空覆盖 |
 | `config` | `load_settings(path: Path \| None) -> dict` | 合并默认值并校验 |
 | `config` | `parse_size(value: str \| int) -> int` | 尺寸字符串转字节 |
+| `config` | `default_cache_dir() -> Path` | 返回 filters 缓存根目录 |
 | `config` | `init_config(args) -> int` | `config init` 子命令：写入默认配置 |
 | `shrink` | `shrink(args, settings, log) -> int` | `shrink` 子命令 |
 | `sync` | `mirror(args, settings, log) -> int` | `mirror` 子命令 |
 | `sync` | `publish(args, settings, log) -> int` | `publish` 子命令 |
 | `doctor` | `doctor(args, settings, log) -> int` | `doctor` 子命令 |
+| `rclone` | `has_files(path: Path, include: list[str] \| None = None) -> bool` | 判断源目录是否至少有一个待同步文件 |
 | `rclone` | `run_rclone(cmd: list[str]) -> int` | 调用 rclone 并返回其退出码 |
 | `rclone` | `ensure_dest(binary, dest, log) -> bool` | 幂等创建目标目录，返回是否成功 |
-| `rclone` | `dest_is_empty(binary, dest, excludes, log) -> bool \| None` | 列出目标一层并判断是否为空；失败返回 `None` |
+| `rclone` | `filters_file(cache_dir, kind, source, dest, includes, excludes) -> Path` | 写入稳定的 rclone filters 文件并返回路径 |
+| `rclone` | `dest_is_empty(binary, dest, filter_args, log) -> bool \| None` | 列出目标一层并按过滤参数判断是否为空；失败返回 `None` |
 
 依赖方向：
 
@@ -142,6 +145,8 @@ pix config init [--force]
 - `effort` 为 0–9。
 - `min_size` 为非负整数，或可解析为字节数的字符串（如 `500K`、`1M`、`2G`）。
 - `max_delete` 为整数且位于 `-1..100`。
+- `mirror.include` 为字符串列表；每项非空、不带点，且只含字母和数字。空列表合法，表示不限制扩展名。
+- `publish` 没有 `include` 配置，固定只同步 `.avif`（大小写不敏感）。
 - `publish.urls` 为布尔值；开启时必须能解析出 `base_url`。
 - `base_url` 必须以 `http://` 或 `https://` 开头；否则退出 2。
 
@@ -163,6 +168,11 @@ min_size = 0
 include  = ["jpg", "jpeg", "png", "webp"]
 
 [mirror]
+include    = [
+  "jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff",
+  "heic", "heif", "avif", "jxl", "svg", "ico",
+  "cr2", "cr3", "nef", "arw", "dng", "orf", "raf", "rw2",
+]
 exclude    = []
 max_delete = 10
 
@@ -272,19 +282,38 @@ binary = "rclone"
 
 `mirror` 把原始图片目录与远端做 **rclone bisync 双向同步**。它是双向镜像，不是单向备份。
 
+默认只同步 `[mirror].include` 中列出的图片扩展名（大小写不敏感）。默认列表为 `jpg`、`jpeg`、`png`、`webp`、`gif`、`bmp`、`tif`、`tiff`、`heic`、`heif`、`avif`、`jxl`、`svg`、`ico`、`cr2`、`cr3`、`nef`、`arw`、`dng`、`orf`、`raf`、`rw2`。`include = []` 表示不限制扩展名，退回只按 `--exclude` 同步所有文件。
+
+过滤规则写入稳定的 rclone filters 文件，顺序固定：
+
+```text
+- <配置 exclude 1>
+- <配置 exclude 2>
+- <命令行 exclude ...>
++ *.{jpg,jpeg,...}
+- **
+```
+
+- `--exclude` 优先于 include；配置项在前、命令行项追加并去重。
+- 使用 `--ignore-case`，`b.PNG` 与 `b.png` 视为同类。
+- 非 Windows 的 filters 文件位于 `$XDG_CACHE_HOME/pix/filters/`（未设置时为 `~/.cache/pix/filters/`），Windows 位于 `%LOCALAPPDATA%\pix\cache\filters\`。文件名由子命令、source、dest 哈希得到；rclone 在同一位置维护同名 `.md5`。
+- bisync 使用 `--filters-file FILE`，目标判空使用等价的 `--filter-from FILE`，保证预检与同步使用同一套规则。
+- **修改 `include` 或 `exclude` 后必须先 `--resync`**：filters 文件内容变化后，rclone 会检测到 md5 不匹配并以退出码 7 拒绝运行。升级到带过滤的版本后首次运行同理。
+- `--dry-run --resync` 可以预览，但不会写入 `.md5`；预览后仍需一次真实的 `--resync` 才能继续增量同步。
+- 远端已有的非图片文件不会被删除，也不会被同步回本地；它们只是不参与镜像。
+- `include = []` 时不生成 filters 文件，`--exclude` 直接传给 rclone，行为与旧版一致；此时不启用 `--ignore-case`。
+
 目标预检与命令拼装：
 
 ```python
 # 幂等；目标存在时不改变内容
 run([rclone, "mkdir", dest])
 
-# 只列一层，并应用与 bisync 相同的排除项
-entries = json.loads(run([rclone, "lsjson", dest, "--max-depth", "1", *exclude_args]))
+# bisync 用 --filters-file，lsjson 用 --filter-from；两者指向同一个文件
+entries = json.loads(run([rclone, "lsjson", dest, "--max-depth", "1", *listing_filter_args]))
 resync = args.resync or not entries
 
-cmd = [rclone, "bisync", str(source), dest]
-for pattern in excludes:
-    cmd += ["--exclude", pattern]
+cmd = [rclone, "bisync", str(source), dest, *bisync_filter_args]
 cmd += ["--max-delete", str(max_delete)]
 if resync:
     cmd.append("--resync")
@@ -294,19 +323,18 @@ cmd.append("--progress" if verbose else "--quiet")
 ```
 
 - 目标预检失败（`rclone mkdir` 或 `rclone lsjson` 非零、JSON 无法解析）返回 1，不调用 bisync。
-- 目标在应用排除项后没有任何条目时，自动加 `--resync` 初始化基线：此时远端没有可覆盖的内容，自动决策是安全的。
+- 目标在应用过滤规则后没有任何条目时，自动加 `--resync` 初始化基线：此时远端没有可覆盖的内容，自动决策是安全的。
 - 首次同步不再要求显式 `--resync`；目标为空或不存在时直接成功。
 - 目标已有内容但没有基线时，不自动 resync。bisync 会失败，`pix` 原样返回其退出码，并在退出码为 7 时提示用户显式加 `--resync`。
-- `--resync` 仍然有效，用于目标非空时强制重建基线（恢复、修改排除项后）。
+- `--resync` 仍然有效，用于目标非空时强制重建基线（恢复、修改 include/exclude 后）。
 - `--dry-run` 仍会创建缺失的目标目录并执行判空，否则首次同步无法预览；它不传输、不删除任何文件，只可能留下一个空目录。
-- 判空只列目标一层并应用与 bisync 相同的排除项，避免全量递归扫描。
+- 判空只列目标一层并应用与 bisync 相同的过滤规则，避免全量递归扫描。
 - `-v` 映射 `--progress`，默认映射 `--quiet`。
 - 默认（非 `-v`、非 `--quiet`）且 stderr 是终端时，bisync 运行期间每秒原地刷新一次 `rclone still running (<秒>s)` 心跳，避免长时间静默被误认为卡死；重定向时、`-v` 下（rclone 自带进度）和 `--quiet` 下均不输出心跳。
-- `--exclude` 按配置在前、命令行在后合并，逐条传给 rclone；`pix` 不内置任何镜像排除规则。
-- **修改排除项后必须先 `--resync`**：rclone 要求过滤器变更后重建基线，否则被排除的文件可能被当作删除传播。先跑 `--dry-run`。
+- `pix` 不内置任何镜像排除规则；排除项仍由配置和 `--exclude` 提供。
 - `--max-delete` 默认 `10`，是删除百分比；一次运行要删除的比例超过 10% 时 rclone 会拒绝。确认要大量删除时显式调高，或传 `-1` 取消限制。
 - 双向同步意味着删除会传播：本地删除会同步到远端，远端删除也会同步到本地。首次操作建议先 `--dry-run`。
-- `-s` 必须是已存在的本地目录。源为空时默认拒绝并退出 2；只有显式 `--allow-empty` 且带 `--resync` 时才允许。
+- `-s` 必须是已存在的本地目录。按 include 过滤后源为空时默认拒绝并退出 2；只有显式 `--allow-empty` 且带 `--resync` 时才允许。
 - 启动时执行 `rclone version`，要求 `>= 1.66`；rclone 缺失或版本过旧时输出错误并返回 1。
 - bisync 的基线由 rclone 自己维护在 `~/.cache/rclone/bisync/`，`pix` 不读写、不清理。
 - 使用 `subprocess.run(cmd)`，不经 shell，直接返回 rclone 的退出码。
@@ -316,8 +344,10 @@ cmd.append("--progress" if verbose else "--quiet")
 `publish` 把 shrink 输出目录与图床远端做 **rclone bisync 双向同步**，参数与 `mirror` 相同，另加：
 
 - `-s` 必须是已存在的本地目录，且至少包含一个 `.avif`。源为空时默认退出 2；只有显式 `--allow-empty` 且带 `--resync` 时才允许。
-- 目标预检与 `mirror` 相同；判空和 bisync 都带上同样的排除项。
-- 固定追加 `--exclude .pix/**`，防止状态文件被同步到图床。配置排除项随后，命令行排除项最后，去重。
+- 固定只同步 `.avif`（大小写不敏感），没有 `include` 配置。输出目录中的其他文件被忽略，不会上传，也不会因此删除远端同名文件。
+- 过滤规则同样写入 filters 文件：排除项在前，然后 `+ *.avif`，最后 `- **`。使用 `--ignore-case`；bisync 用 `--filters-file`，判空用 `--filter-from`。
+- 固定排除 `.pix/**`，防止状态文件被同步到图床。配置排除项随后，命令行排除项最后，去重。修改排除项后同样必须 `--resync`。
+- 目标预检与 `mirror` 相同；判空和 bisync 都带上同样的过滤规则。
 - `--max-delete` 与 `mirror` 相同，默认 `10`，按删除百分比计。
 - `--base-url` 优先取命令行，其次取 `[publish].base_url`。值必须以 `http://` 或 `https://` 开头，否则退出 2。
 - `--urls` / `--no-urls` 优先取命令行，其次取 `[publish].urls`，默认关闭；`--no-urls` 可临时关闭配置中的 `true`。

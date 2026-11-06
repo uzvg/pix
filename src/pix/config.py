@@ -12,6 +12,7 @@ from typing import Any
 
 _SIZE_RE = re.compile(r"^(\d+)([KMG]?)$", re.IGNORECASE)
 _SIZE_UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}
+_EXTENSION_RE = re.compile(r"^[A-Za-z0-9]+$")
 
 
 class ConfigError(Exception):
@@ -53,6 +54,18 @@ def default_config_path() -> Path:
     if base:
         return Path(base) / "pix" / "config.toml"
     return Path.home() / ".config" / "pix" / "config.toml"
+
+
+def default_cache_dir() -> Path:
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / "pix" / "cache"
+        return Path.home() / "AppData" / "Local" / "pix" / "cache"
+    base = os.environ.get("XDG_CACHE_HOME")
+    if base:
+        return Path(base) / "pix"
+    return Path.home() / ".cache" / "pix"
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -130,6 +143,12 @@ def validate_settings(settings: dict[str, Any]) -> None:
     for section in ("mirror", "publish"):
         _require_excludes(f"{section}.exclude", settings[section]["exclude"])
         require_int(f"{section}.max_delete", settings[section]["max_delete"], -1, 100)
+
+    mirror_include = settings["mirror"]["include"]
+    if not isinstance(mirror_include, list) or not all(
+        isinstance(item, str) and _EXTENSION_RE.fullmatch(item) for item in mirror_include
+    ):
+        raise ConfigError("mirror.include must be a list of extensions without dots")
 
     publish = settings["publish"]
     if not isinstance(publish["base_url"], str):

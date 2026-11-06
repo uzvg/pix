@@ -12,6 +12,11 @@ from pix import config as pix_config
 from pix.logger import Logger
 
 
+@pytest.fixture(autouse=True)
+def _isolated_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr("pix.sync.default_cache_dir", lambda: tmp_path / "cache")
+
+
 def test_parse_size():
     assert pix_config.parse_size("0") == 0
     assert pix_config.parse_size("500K") == 500 * 1024
@@ -72,6 +77,13 @@ def test_invalid_config_value_exits_two(tmp_path: Path, capsys):
     config.write_text("[shrink]\nquality = 101\n", encoding="utf-8")
     assert cli.main(["--config", str(config), "shrink", "-s", "a", "-d", "b"]) == 2
     assert "shrink.quality" in capsys.readouterr().err
+
+
+def test_invalid_mirror_include_exits_two(tmp_path: Path, capsys):
+    config = tmp_path / "config.toml"
+    config.write_text('[mirror]\ninclude = [".jpg"]\n', encoding="utf-8")
+    assert cli.main(["--config", str(config), "mirror", "-s", "a", "-d", "b"]) == 2
+    assert "mirror.include" in capsys.readouterr().err
 
 
 def test_config_section_must_be_table(tmp_path: Path):
@@ -422,6 +434,10 @@ def make_source(tmp_path: Path) -> Path:
     return source
 
 
+def filter_path(cmd: list[str], flag: str) -> Path:
+    return Path(cmd[cmd.index(flag) + 1])
+
+
 def test_mirror_builds_bisync_command(tmp_path: Path, monkeypatch):
     source = make_source(tmp_path)
     config = tmp_path / "config.toml"
@@ -449,34 +465,35 @@ def test_mirror_builds_bisync_command(tmp_path: Path, monkeypatch):
 
     assert calls[0] == ["rclone", "version"]
     assert calls[1] == ["rclone", "mkdir", "remote:photos"]
+    listing_path = filter_path(calls[2], "--filter-from")
     assert calls[2] == [
         "rclone",
         "lsjson",
         "remote:photos",
         "--max-depth",
         "1",
-        "--exclude",
-        "cfg",
-        "--exclude",
-        "dup",
-        "--exclude",
-        "cli",
+        "--filter-from",
+        str(listing_path),
+        "--ignore-case",
     ]
+    bisync_path = filter_path(calls[3], "--filters-file")
+    assert bisync_path == listing_path
     assert calls[3] == [
         "rclone",
         "bisync",
         str(source),
         "remote:photos",
-        "--exclude",
-        "cfg",
-        "--exclude",
-        "dup",
-        "--exclude",
-        "cli",
+        "--filters-file",
+        str(bisync_path),
+        "--ignore-case",
         "--max-delete",
         "9",
         "--progress",
     ]
+    lines = bisync_path.read_text(encoding="utf-8").splitlines()
+    assert lines[:3] == ["- cfg", "- dup", "- cli"]
+    assert lines[3].startswith("+ *.{jpg,jpeg,png,webp,")
+    assert lines[-1] == "- **"
 
 
 def test_mirror_defaults_to_quiet_and_max_delete_ten(tmp_path: Path, monkeypatch):
@@ -497,6 +514,41 @@ def test_mirror_empty_source_refuses(tmp_path: Path, monkeypatch, capsys):
 
     assert calls == []
     assert "source is empty" in capsys.readouterr().err
+
+
+def test_mirror_non_image_source_refuses(tmp_path: Path, monkeypatch, capsys):
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "note.md").write_text("x", encoding="utf-8")
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 2
+
+    assert calls == []
+    assert "source is empty" in capsys.readouterr().err
+
+
+def test_mirror_empty_include_syncs_all_files(tmp_path: Path, monkeypatch):
+    source = make_source(tmp_path)
+    (source / "note.md").write_text("x", encoding="utf-8")
+    config = tmp_path / "config.toml"
+    config.write_text("[mirror]\ninclude = []\n", encoding="utf-8")
+    calls = fake_rclone(monkeypatch)
+
+    assert cli.main(
+        ["--config", str(config), "mirror", "-s", str(source), "-d", "remote:photos"]
+    ) == 0
+
+    assert calls[2] == ["rclone", "lsjson", "remote:photos", "--max-depth", "1"]
+    assert calls[3] == [
+        "rclone",
+        "bisync",
+        str(source),
+        "remote:photos",
+        "--max-delete",
+        "10",
+        "--quiet",
+    ]
 
 
 def test_mirror_allow_empty_requires_resync(tmp_path: Path, monkeypatch):
@@ -587,8 +639,18 @@ def test_mirror_initializes_empty_destination(tmp_path: Path, monkeypatch):
 
     assert cli.main(["mirror", "-s", str(source), "-d", "remote:photos"]) == 0
 
+    path = filter_path(calls[2], "--filter-from")
     assert calls[1] == ["rclone", "mkdir", "remote:photos"]
-    assert calls[2] == ["rclone", "lsjson", "remote:photos", "--max-depth", "1"]
+    assert calls[2] == [
+        "rclone",
+        "lsjson",
+        "remote:photos",
+        "--max-depth",
+        "1",
+        "--filter-from",
+        str(path),
+        "--ignore-case",
+    ]
     assert calls[3][:4] == ["rclone", "bisync", str(source), "remote:photos"]
     assert "--resync" in calls[3]
 
@@ -693,20 +755,35 @@ def test_publish_builds_bisync_command_with_pix_exclude(tmp_path: Path, monkeypa
         ]
     ) == 0
 
+    assert calls[2] == [
+        "rclone",
+        "lsjson",
+        "r2:images",
+        "--max-depth",
+        "1",
+        "--filter-from",
+        str(filter_path(calls[2], "--filter-from")),
+        "--ignore-case",
+    ]
+    path = filter_path(calls[3], "--filters-file")
     assert calls[3] == [
         "rclone",
         "bisync",
         str(source),
         "r2:images",
-        "--exclude",
-        ".pix/**",
-        "--exclude",
-        "cfg",
-        "--exclude",
-        "cli",
+        "--filters-file",
+        str(path),
+        "--ignore-case",
         "--max-delete",
         "10",
         "--quiet",
+    ]
+    assert path.read_text(encoding="utf-8").splitlines() == [
+        "- .pix/**",
+        "- cfg",
+        "- cli",
+        "+ *.{avif}",
+        "- **",
     ]
 
 
@@ -717,14 +794,16 @@ def test_publish_initializes_empty_destination_with_excludes(tmp_path: Path, mon
     assert cli.main(["publish", "-s", str(source), "-d", "r2:images"]) == 0
 
     assert calls[1] == ["rclone", "mkdir", "r2:images"]
+    path = filter_path(calls[2], "--filter-from")
     assert calls[2] == [
         "rclone",
         "lsjson",
         "r2:images",
         "--max-depth",
         "1",
-        "--exclude",
-        ".pix/**",
+        "--filter-from",
+        str(path),
+        "--ignore-case",
     ]
     assert "--resync" in calls[3]
 

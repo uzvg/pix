@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -31,8 +33,39 @@ def merge_excludes(*groups: list[str] | None) -> list[str]:
     return merged
 
 
-def has_files(path: Path) -> bool:
-    return any(item.is_file() for item in path.rglob("*"))
+def has_files(path: Path, include: list[str] | None = None) -> bool:
+    wanted = {item.lower() for item in include} if include else None
+    for item in path.rglob("*"):
+        if not item.is_file():
+            continue
+        if wanted is None or item.suffix.lower().lstrip(".") in wanted:
+            return True
+    return False
+
+
+def filters_file(
+    cache_dir: Path,
+    kind: str,
+    source: Path,
+    dest: str,
+    includes: list[str],
+    excludes: list[str],
+) -> Path:
+    extensions = list(dict.fromkeys(item.lower() for item in includes))
+    lines = [f"- {pattern}" for pattern in excludes]
+    lines.append(f"+ *.{{{','.join(extensions)}}}")
+    lines.append("- **")
+    content = "\n".join(lines) + "\n"
+
+    key = "\0".join((kind, str(source.resolve()), dest))
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+    path = cache_dir / "filters" / f"{kind}-{digest}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.is_file() or path.read_text(encoding="utf-8") != content:
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, path)
+    return path
 
 
 def ensure_dest(binary: str, dest: str, log: Logger) -> bool:
@@ -40,11 +73,9 @@ def ensure_dest(binary: str, dest: str, log: Logger) -> bool:
 
 
 def dest_is_empty(
-    binary: str, dest: str, excludes: list[str], log: Logger
+    binary: str, dest: str, filter_args: list[str], log: Logger
 ) -> bool | None:
-    cmd = [binary, "lsjson", dest, "--max-depth", "1"]
-    for pattern in excludes:
-        cmd += ["--exclude", pattern]
+    cmd = [binary, "lsjson", dest, "--max-depth", "1", *filter_args]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
     except FileNotFoundError:

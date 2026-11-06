@@ -12,6 +12,7 @@
 - 文档已按新定位重写，并完成 2026-11-04 审计修复。
 - 2026-11-04：`cli.py` 已按职责拆分，`cli.py` 作为组合根（D27）。
 - 2026-11-06：`mirror` / `publish` 自动创建目标；目标为空时自动初始化基线（D30）。本地端到端已验证：目标不存在时首次同步成功，第二次增量成功。
+- 2026-11-06：`mirror` 默认只同步图片扩展名，`[mirror].include` 可配置；`publish` 固定只同步 `.avif`（D31）。
 
 ## M0. 文档重写（完成）
 
@@ -83,6 +84,9 @@
 - [x] mock `subprocess.run`，断言 argv 和退出码透传。
 - [x] rclone 不存在或低于 1.66 时输出提示并返回 1。
 - [x] 修改排除项后要求 `--resync`，并在文档和错误提示中说明。
+- [x] `[mirror].include` 默认图片白名单；`include = []` 关闭白名单。
+- [x] 图片过滤使用 filters 文件、`--ignore-case`、`--filters-file` / `--filter-from`；空源检查按 include 过滤。
+- [x] include/exclude 变化由 rclone filters 文件 md5 检测，未 `--resync` 时以退出码 7 拒绝。
 - [x] 首次 `--resync` 与二次增量的手工验证（2026-11-04，本地临时目录；含双向删除传播）。
 
 验收：
@@ -94,7 +98,8 @@
 ## M4. publish
 
 - [x] 目标预检与 `mirror` 共用，判空带上 `.pix/**`。
-- [x] bisync 命令固定追加 `--exclude .pix/**`，配置排除项随后，命令行追加。
+- [x] bisync 固定只同步 `.avif`，并排除 `.pix/**`；配置排除项随后，命令行追加。
+- [x] `publish` 使用 filters 文件与 `--ignore-case`，修改排除项后要求 `--resync`。
 - [x] `publish` 源必须是含至少一个 `.avif` 的目录；空源需 `--allow-empty` 加 `--resync`。
 - [x] `--max-delete` 默认 10%，与 `mirror` 一致。
 - [x] `--base-url` / `[publish].base_url` 合并，协议必须是 `http(s)://`。
@@ -140,7 +145,8 @@
 | bisync 双向删除不可逆 | 默认 `--max-delete 10`（10% 删除比例）；目标为空时自动初始化，非空时显式 `--resync`；先 `--dry-run` |
 | 空目录/挂载失败被当成“删除全部” | `--prune` 空源拒绝；`mirror` / `publish` 空源需 `--allow-empty` |
 | `a.jpg` 与 `a.jpeg` 争用同一输出 | 编码前冲突检测，退出 2 |
-| 修改排除项后未 resync 导致误删 | 文档与错误提示要求先 `--resync` |
+| 修改 include/exclude 后未 resync 导致误删 | filters 文件 md5 检测；文档与错误提示要求先 `--resync` |
+| 非图片文件被意外同步 | `[mirror].include` 默认白名单；`publish` 固定只同步 `.avif` |
 | `pyvips[binary]` 与系统 libvips 版本不一致导致 AVIF 差异 | 已在 8.18.7 验证字节一致；升级 libvips 后重跑抽样对比 |
 | Windows 原生库加载失败 | M5 Windows 冒烟；doctor 提供安装提示 |
 | 临时文件后缀不是 `.avif` 导致格式选择错误 | 实现时固定临时文件名后缀，测试覆盖 |

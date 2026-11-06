@@ -8,16 +8,36 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from .config import ConfigError, require_int
+from .config import ConfigError, default_cache_dir, require_int
 from .logger import Logger
 from .rclone import (
     check_rclone,
     dest_is_empty,
     ensure_dest,
+    filters_file,
     has_files,
     merge_excludes,
     run_rclone,
 )
+
+
+def _filter_args(
+    kind: str,
+    source: Path,
+    dest: str,
+    includes: list[str],
+    excludes: list[str],
+    log: Logger,
+) -> tuple[list[str], list[str]] | None:
+    try:
+        path = filters_file(default_cache_dir(), kind, source, dest, includes, excludes)
+    except OSError as exc:
+        log.error(f"cannot write filters file: {exc}")
+        return None
+    return (
+        ["--filters-file", str(path), "--ignore-case"],
+        ["--filter-from", str(path), "--ignore-case"],
+    )
 
 
 def _run_bisync(
@@ -25,7 +45,8 @@ def _run_bisync(
     version: str,
     source: Path,
     dest: str,
-    excludes: list[str],
+    bisync_filter_args: list[str],
+    listing_filter_args: list[str],
     max_delete: int,
     args: argparse.Namespace,
     log: Logger,
@@ -36,16 +57,14 @@ def _run_bisync(
 
     resync = bool(args.resync)
     if not resync:
-        empty = dest_is_empty(binary, dest, excludes, log)
+        empty = dest_is_empty(binary, dest, listing_filter_args, log)
         if empty is None:
             return 1
         if empty:
             log.info("destination is empty; initializing sync baseline")
             resync = True
 
-    cmd = [binary, "bisync", str(source), dest]
-    for pattern in excludes:
-        cmd += ["--exclude", pattern]
+    cmd = [binary, "bisync", str(source), dest, *bisync_filter_args]
     cmd += ["--max-delete", str(max_delete)]
     if resync:
         cmd.append("--resync")
@@ -58,8 +77,7 @@ def _run_bisync(
     code = run_rclone(cmd, log)
     if code == 7 and not resync:
         log.error(
-            "if the destination already has content and this is the first sync, "
-            "rerun with --resync to initialize the baseline"
+            "rerun with --resync to initialize the baseline or accept changed filters"
         )
     return code
 
@@ -67,6 +85,7 @@ def _run_bisync(
 def mirror(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> int:
     config = settings["mirror"]
     source = args.source
+    includes = config["include"]
     if not source.is_dir():
         log.error(f"source is not a directory: {source}")
         return 2
@@ -82,7 +101,7 @@ def mirror(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
         return 2
 
     try:
-        has_files_found = has_files(source)
+        has_files_found = has_files(source, includes)
     except OSError as exc:
         log.error(f"cannot scan {source}: {exc}")
         return 1
@@ -96,8 +115,26 @@ def mirror(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> i
         return 1
 
     excludes = merge_excludes(config["exclude"], args.exclude)
+    if includes:
+        filter_args = _filter_args("mirror", source, args.dest, includes, excludes, log)
+        if filter_args is None:
+            return 1
+        bisync_filter_args, listing_filter_args = filter_args
+    else:
+        legacy_args: list[str] = []
+        for pattern in excludes:
+            legacy_args += ["--exclude", pattern]
+        bisync_filter_args = listing_filter_args = legacy_args
     return _run_bisync(
-        binary, version, source, args.dest, excludes, max_delete, args, log
+        binary,
+        version,
+        source,
+        args.dest,
+        bisync_filter_args,
+        listing_filter_args,
+        max_delete,
+        args,
+        log,
     )
 
 
@@ -153,8 +190,20 @@ def publish(args: argparse.Namespace, settings: dict[str, Any], log: Logger) -> 
         return 1
 
     excludes = merge_excludes([".pix/**"], config["exclude"], args.exclude)
+    filter_args = _filter_args("publish", source, args.dest, ["avif"], excludes, log)
+    if filter_args is None:
+        return 1
+    bisync_filter_args, listing_filter_args = filter_args
     code = _run_bisync(
-        binary, version, source, args.dest, excludes, max_delete, args, log
+        binary,
+        version,
+        source,
+        args.dest,
+        bisync_filter_args,
+        listing_filter_args,
+        max_delete,
+        args,
+        log,
     )
     if code != 0 or args.dry_run or not urls:
         return code
